@@ -1,0 +1,24 @@
+# Secrets
+.cdsapirc
+**/.cdsapirc
+
+# Large generated/downloaded data
+graphcast/data/
+*.nc
+*.grib
+*.grib2
+*.idx
+*.npz
+
+# Runtime outputs
+logs/
+graphcast/results/
+wget-log
+
+# Backup of the embedded GraphCast clone metadata if vendoring source files.
+graphcast/source.git-backup/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
