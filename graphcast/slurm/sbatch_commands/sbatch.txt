@@ -1,0 +1,28 @@
+
+# convert pre_industrial data into the graph cast format
+cd /home/ka/ka_iti/ka_ou7270/AIC
+
+RAW_DIR=/home/ka/ka_iti/ka_ou7270/AIC/graphcast/data/graphcast/dataset/pre_industrial
+OUTPUT_DATASET=${RAW_DIR}/graphcast_1955_init_19550101_06.nc
+
+sbatch \
+  --partition=cpu \
+  --time=02:00:00 \
+  --mem=80G \
+  graphcast/slurm/convert_preindustrial_1955_graphcast.sbatch
+
+
+# run operational rollout
+
+
+cd /home/ka/ka_iti/ka_ou7270/AIC
+
+GRAPHCAST_1955_DATASET=/home/ka/ka_iti/ka_ou7270/AIC/graphcast/data/graphcast/dataset/pre_industrial/graphcast_1955_init_19550101_06.nc \
+RUN_ID=rackow_preindustrial_1955_operational_10day \
+ROLLOUT_STEPS=40 \
+REFERENCE=ground_truth \
+sbatch \
+  --partition=gpu_a100_il \
+  --time=12:00:00 \
+  graphcast/slurm/operational_1955_t2m_rmse.sbatch
+
