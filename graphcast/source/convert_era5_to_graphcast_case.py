@@ -336,6 +336,19 @@ def build_encoding(dataset: xr.Dataset, compression_level: int) -> dict[str, dic
   return encoding
 
 
+def remove_decode_conflicting_time_attrs(path: Path) -> None:
+  """Remove NetCDF attrs that make xarray fail timedelta decoding."""
+  from netCDF4 import Dataset  # pylint: disable=import-outside-toplevel
+
+  with Dataset(path, mode="a") as netcdf:
+    if "time" not in netcdf.variables:
+      return
+    time = netcdf.variables["time"]
+    if "dtype" in time.ncattrs():
+      logging.info("Removing time coordinate dtype attribute from %s", path)
+      time.delncattr("dtype")
+
+
 def main() -> None:
   args = parse_args()
   logging.basicConfig(
@@ -369,6 +382,7 @@ def main() -> None:
       engine="netcdf4",
       encoding=build_encoding(dataset, args.compression_level),
   )
+  remove_decode_conflicting_time_attrs(output)
   logging.info("Done: %s", output)
 
 

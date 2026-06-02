@@ -398,7 +398,7 @@ def open_dataset_from_path_or_gcs(bucket: Any, path_or_uri: str, cache_dir: Path
     path = Path(path_or_uri).expanduser()
 
   logging.info("Loading dataset from %s", path)
-  return xr.load_dataset(path).compute()
+  return xr.load_dataset(path, decode_timedelta=True).compute()
 
 
 def load_example_dataset(
@@ -418,7 +418,7 @@ def load_example_dataset(
       bucket, model_config, task_config, rollout_steps, dataset_name)
   path = cache_blob(bucket, DATASET_PREFIX + resolved_name, cache_dir)
   logging.info("Loading sample dataset: %s", resolved_name)
-  return xr.load_dataset(path).compute(), resolved_name
+  return xr.load_dataset(path, decode_timedelta=True).compute(), resolved_name
 
 
 def grid_size_from_resolution(model_config: Any) -> tuple[int, int]:
