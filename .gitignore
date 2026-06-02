@@ -22,3 +22,9 @@ graphcast/source.git-backup/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+
+# Local virtualenv (created by neural_gcm/setup_env.sh)
+.venv/
+
+# Local editor / agent config
+.claude/

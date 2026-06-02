@@ -1,0 +1,16 @@
+# NeuralGCM reproduction environment.
+# Installed into a pinned Python 3.11 venv via setup_env.sh (NOT the 3.13 system interpreter).
+#
+# `jax[cuda12]` is listed explicitly so the CUDA build of JAX wins the resolve;
+# `pip install neuralgcm` alone would pull CPU-only JAX. If the resolver reports
+# a JAX version conflict, install neuralgcm first, then pin jax[cuda12] to the
+# version neuralgcm requires (see README.md). `dinosaur` is pulled in by neuralgcm.
+neuralgcm
+jax[cuda12]
+gcsfs
+xarray
+zarr
+matplotlib
+ipykernel
+jupyter
+nbconvert
