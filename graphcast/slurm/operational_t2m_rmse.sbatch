@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=gc-op-1955-rmse
+#SBATCH --job-name=gc-op-t2m-rmse-2023
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 #SBATCH --nodes=1
@@ -15,24 +15,28 @@ set -euo pipefail
 REPO_ROOT="${SLURM_SUBMIT_DIR:-/home/ka/ka_iti/ka_ou7270/AIC}"
 PYTHON="${PYTHON:-/home/ka/ka_iti/ka_ou7270/miniconda3/envs/graphcast_env/bin/python}"
 
-# Optional: GraphCast-formatted 1955 NetCDF containing 2 input frames plus
-# 40 future truth frames if you want true 10-day ground-truth RMSE. If unset,
-# the Python script auto-selects a public DeepMind sample dataset for smoke
-# testing only.
-DATASET_ARGS=()
-DATASET_LABEL="auto-selected DeepMind sample dataset"
-if [[ -n "${GRAPHCAST_1955_DATASET:-}" ]]; then
-  DATASET_ARGS=(--dataset-path "${GRAPHCAST_1955_DATASET}")
-  DATASET_LABEL="${GRAPHCAST_1955_DATASET}"
+# Optional: GraphCast-formatted NetCDF containing 2 input frames plus future
+# truth frames if you want ground-truth RMSE. If unset, the Python script
+# auto-selects a public DeepMind sample dataset for smoke testing only.
+DATASET_PATH="${GRAPHCAST_DATASET:-}"
+if [[ -z "${DATASET_PATH}" && -n "${GRAPHCAST_1955_DATASET:-}" ]]; then
+  DATASET_PATH="${GRAPHCAST_1955_DATASET}"
 fi
 
-RUN_ID="${RUN_ID:-operational_1955_t2m_rmse_${SLURM_JOB_ID:-manual}}"
+DATASET_ARGS=()
+DATASET_LABEL="auto-selected DeepMind sample dataset"
+if [[ -n "${DATASET_PATH}" ]]; then
+  DATASET_ARGS=(--dataset-path "${DATASET_PATH}")
+  DATASET_LABEL="${DATASET_PATH}"
+fi
+
+RUN_ID="${RUN_ID:-operational_t2m_rmse_${SLURM_JOB_ID:-manual}}"
 CACHE_DIR="${CACHE_DIR:-/scratch/${USER}/graphcast_cache}"
 OUT_DIR="${OUT_DIR:-${REPO_ROOT}/graphcast/results/${RUN_ID}}"
 ROLLOUT_STEPS="${ROLLOUT_STEPS:-40}"
 METRICS_FREQUENCY="${METRICS_FREQUENCY:-daily}"
 if [[ -z "${REFERENCE:-}" ]]; then
-  if [[ -n "${GRAPHCAST_1955_DATASET:-}" ]]; then
+  if [[ -n "${DATASET_PATH}" ]]; then
     REFERENCE="ground_truth"
   else
     REFERENCE="initial_state"
@@ -66,11 +70,11 @@ nvidia-smi || true
   --step-hours 6 \
   --metrics-frequency "${METRICS_FREQUENCY}" \
   --cache-dir "${CACHE_DIR}" \
-  --output-csv "${OUT_DIR}/t2m_rmse_bias_operational_1955_daily.csv" \
-  --plot-path "${OUT_DIR}/t2m_rmse_bias_operational_1955_daily.png" \
+  --output-csv "${OUT_DIR}/t2m_rmse_bias_operational_daily.csv" \
+  --plot-path "${OUT_DIR}/t2m_rmse_bias_operational_daily.png" \
   --xla-mem-fraction "${XLA_PYTHON_CLIENT_MEM_FRACTION}" \
   --log-level INFO
 
 echo "Done. Results:"
-echo "${OUT_DIR}/t2m_rmse_bias_operational_1955_daily.csv"
-echo "${OUT_DIR}/t2m_rmse_bias_operational_1955_daily.png"
+echo "${OUT_DIR}/t2m_rmse_bias_operational_daily.csv"
+echo "${OUT_DIR}/t2m_rmse_bias_operational_daily.png"
