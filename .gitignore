@@ -28,3 +28,8 @@ __pycache__/
 
 # Local editor / agent config
 .claude/
+
+# NeuralGCM daily-rollout scheduler runtime artifacts (not source/data)
+neural_gcm/results_daily/*.log
+neural_gcm/results_daily/.done_*
+neural_gcm/results_daily/orchestrator.log

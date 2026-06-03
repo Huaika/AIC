@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# Set up a pinned Python 3.11 virtualenv for NeuralGCM and register it as a
-# Jupyter kernel. NeuralGCM / dinosaur / JAX are not reliably tested on the
-# devcontainer's Python 3.13, so we use uv to fetch a standalone 3.11.
+# Set up a pinned Python 3.11 virtualenv for NeuralGCM. The venv's built-in
+# 'python3' Jupyter kernel is used for headless runs (no --user kernel needed).
+# NeuralGCM / dinosaur / JAX are not reliably tested on the devcontainer's
+# Python 3.13, so we use uv to fetch a standalone 3.11.
 #
 # Usage:  bash setup_env.sh
 set -euo pipefail
@@ -33,10 +34,10 @@ if ! uv pip install --python .venv/bin/python -r requirements.txt; then
     gcsfs xarray zarr matplotlib ipykernel jupyter nbconvert
 fi
 
-# 4. Register the venv as a Jupyter kernel so the notebook can select it.
-echo ">> registering Jupyter kernel 'neuralgcm' ..."
-.venv/bin/python -m ipykernel install --user \
-  --name neuralgcm --display-name "Python (NeuralGCM 3.11)"
+# 4. No separate kernel registration: the venv ships a built-in 'python3' kernel
+#    (.venv/share/jupyter/kernels/python3) and the headless runs invoke nbconvert
+#    with --ExecutePreprocessor.kernel_name=python3, so there is nothing in
+#    ~/.local/share/jupyter to get wiped on a container rebuild.
 
 echo ">> done. Verifying JAX sees the GPU:"
 .venv/bin/python -c "import jax; print('JAX devices:', jax.devices())"

@@ -24,8 +24,12 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export XLA_PYTHON_CLIENT_ALLOCATOR=default          # BFC pooling for the long loop
 export RACKOW_YEARS="$YEAR"
 
+# Use the venv's built-in 'python3' kernel (lives in .venv/share/jupyter, so it
+# is rebuilt with the venv and survives container rebuilds). jupyter_client
+# rewrites its argv[0] 'python' to sys.executable = this venv's python, so no
+# separate '--user' kernel registration is needed.
 exec "$PY" -m nbconvert --to notebook --execute \
   --output "/tmp/exec_daily_${YEAR}.ipynb" \
-  --ExecutePreprocessor.kernel_name=neuralgcm \
+  --ExecutePreprocessor.kernel_name=python3 \
   --ExecutePreprocessor.timeout=-1 \
   rackow_daily_rollouts.ipynb
