@@ -4,11 +4,9 @@ import dataclasses
 import logging
 import os
 from pathlib import Path
-import sys
 from typing import Any
 
 import numpy as np
-import pandas as pd
 import xarray as xr
 
 import haiku as hk  # pylint: disable=import-outside-toplevel
@@ -22,6 +20,13 @@ from graphcast import graphcast  # pylint: disable=import-outside-toplevel
 from graphcast import normalization  # pylint: disable=import-outside-toplevel
 from graphcast import rollout  # pylint: disable=import-outside-toplevel
 from graphcast import xarray_jax  # pylint: disable=import-outside-toplevel,unused-import
+
+if __package__:
+  from .metrics import compute_metric_summary, select_metric_field
+  from .plots import plot_metrics
+else:
+  from metrics import compute_metric_summary, select_metric_field
+  from plots import plot_metrics
 
 
 GCS_BUCKET = "dm_graphcast"
@@ -283,6 +288,15 @@ def open_reference_era5(
   return dataset, label
 
 
+def materialize_coords(dataset: xr.Dataset) -> xr.Dataset:
+  """Return dataset with eager coordinates while preserving lazy data variables."""
+  coords = {
+      name: xr.Variable(coord.dims, np.asarray(coord.values), coord.attrs)
+      for name, coord in dataset.coords.items()
+  }
+  return dataset.assign_coords(coords)
+
+
 def forecast_start_datetime(reference: xr.Dataset) -> np.ndarray:
   if "datetime" in reference.coords:
     datetime = reference.coords["datetime"]
@@ -350,7 +364,8 @@ def read_reference_era5(
 
   available_target_steps = reference.sizes["time"] - 2
   target_steps = min(rollout_steps, available_target_steps)
-  reference_window = reference.isel(time=slice(0, target_steps + 2))
+  reference_window = materialize_coords(
+      reference.isel(time=slice(0, target_steps + 2)))
   inputs, targets, forcings = data_utils.extract_inputs_targets_forcings(
       reference_window,
       target_lead_times=slice(f"{step_hours}h", f"{target_steps * step_hours}h"),
@@ -489,160 +504,6 @@ def next_inputs_from_prediction(prev_inputs: xr.Dataset, next_frame: xr.Dataset)
       [prev_inputs, next_inputs], dim="time", data_vars="different"
   ).tail(time=prev_inputs.sizes["time"])
 
-
-def lat_weighted_global_mean(field: xr.DataArray) -> xr.DataArray:
-  weights = xr.DataArray(
-      np.cos(np.deg2rad(field.coords["lat"].values)).astype(np.float32),
-      coords={"lat": field.coords["lat"]},
-      dims=("lat",),
-  )
-  result = field.weighted(weights).mean(("lat", "lon"), skipna=True)
-  for dim in list(result.dims):
-    if dim != "time":
-      result = result.mean(dim, skipna=True)
-  return result
-
-
-def select_metric_field(
-    dataset: xr.Dataset,
-    variable: str,
-    level: int | None,
-) -> xr.DataArray:
-  if variable not in dataset:
-    available = ", ".join(sorted(dataset.data_vars))
-    raise KeyError(f"Variable {variable!r} not found. Available variables: {available}")
-
-  field = dataset[variable]
-  if "level" in field.dims:
-    if level is None:
-      raise ValueError(
-          f"Variable {variable!r} has a level dimension. Set "
-          "GRAPHCAST_METRIC_LEVEL, for example GRAPHCAST_METRIC_LEVEL=850."
-      )
-    if level not in set(int(value) for value in field.coords["level"].values):
-      raise ValueError(
-          f"Level {level} is not available for {variable!r}. Available levels: "
-          f"{field.coords['level'].values.tolist()}"
-      )
-    return field.sel(level=level)
-
-  if level is not None:
-    raise ValueError(
-        f"GRAPHCAST_METRIC_LEVEL={level} was set, but {variable!r} has no "
-        "level dimension."
-    )
-  return field
-
-
-def selected_reference(
-    predictions: xr.DataArray,
-    inputs: xr.Dataset,
-    truth: xr.Dataset | None,
-    reference_mode: str,
-    metric_variable: str,
-    metric_level: int | None,
-) -> tuple[xr.DataArray, str]:
-  has_full_truth = (
-      truth is not None
-      and metric_variable in truth
-      and truth.sizes.get("time", 0) >= predictions.sizes["time"]
-  )
-
-  if reference_mode == "ground_truth" and not has_full_truth:
-    raise ValueError(
-        "Ground truth requested, but the dataset does not contain all rollout "
-        "target steps. Use REFERENCE_MODE='initial_state' or provide a longer "
-        "dataset."
-    )
-
-  if reference_mode == "ground_truth" or (reference_mode == "auto" and has_full_truth):
-    ref = select_metric_field(truth, metric_variable, metric_level).isel(
-        time=slice(0, predictions.sizes["time"]))
-    ref = ref.assign_coords(time=predictions.coords["time"])
-    return ref, "ground_truth"
-
-  return select_metric_field(inputs, metric_variable, metric_level).isel(
-      time=-1), "initial_state"
-
-
-def timedelta_hours(values: np.ndarray) -> np.ndarray:
-  return values.astype("timedelta64[s]").astype(np.float64) / 3600.0
-
-
-def compute_metric_summary(
-    predictions: xr.DataArray,
-    inputs: xr.Dataset,
-    truth: xr.Dataset | None,
-    reference_mode: str,
-    step_hours: int,
-    metrics_frequency: str,
-    metric_variable: str,
-    metric_level: int | None,
-    metric_id: str,
-) -> pd.DataFrame:
-  reference_field, reference_label = selected_reference(
-      predictions, inputs, truth, reference_mode, metric_variable, metric_level)
-  diff = predictions - reference_field
-
-  rmse = np.sqrt(lat_weighted_global_mean(diff ** 2))
-  bias = lat_weighted_global_mean(diff)
-  lead_hours = timedelta_hours(predictions.coords["time"].values)
-  rmse_col = f"{metric_id}_rmse_k"
-  bias_col = f"{metric_id}_mean_bias_k"
-
-  frame = pd.DataFrame({
-      "step": np.arange(1, predictions.sizes["time"] + 1, dtype=np.int32),
-      "lead_hours": lead_hours,
-      "lead_day": lead_hours / 24.0,
-      rmse_col: np.asarray(rmse.values, dtype=np.float64),
-      bias_col: np.asarray(bias.values, dtype=np.float64),
-      "metric_variable": metric_variable,
-      "metric_level_hpa": metric_level,
-      "reference": reference_label,
-  })
-
-  if metrics_frequency == "daily":
-    steps_per_day = int(round(24 / step_hours))
-    frame = frame[frame["step"] % steps_per_day == 0].copy()
-    frame["day"] = (frame["step"] // steps_per_day).astype(np.int32)
-    cols = [
-        "day",
-        "step",
-        "lead_hours",
-        "lead_day",
-        rmse_col,
-        bias_col,
-        "metric_variable",
-        "metric_level_hpa",
-        "reference",
-    ]
-    frame = frame[cols]
-
-  return frame
-
-def plot_metrics(metrics: pd.DataFrame, plot_path: Path, metric_id: str) -> None:
-  import matplotlib  # pylint: disable=import-outside-toplevel
-
-  matplotlib.use("Agg")
-  import matplotlib.pyplot as plt  # pylint: disable=import-outside-toplevel
-
-  x_col = "day" if "day" in metrics.columns else "lead_day"
-  rmse_col = f"{metric_id}_rmse_k"
-  bias_col = f"{metric_id}_mean_bias_k"
-  fig, ax_rmse = plt.subplots(figsize=(8, 4.5))
-  ax_bias = ax_rmse.twinx()
-
-  ax_rmse.plot(metrics[x_col], metrics[rmse_col], marker="o", color="#1f77b4")
-  ax_bias.plot(metrics[x_col], metrics[bias_col], marker="s", color="#d62728")
-
-  ax_rmse.set_xlabel("Forecast day")
-  ax_rmse.set_ylabel(f"Latitude-weighted {metric_id} RMSE (K)", color="#1f77b4")
-  ax_bias.set_ylabel(f"Latitude-weighted {metric_id} mean bias (K)", color="#d62728")
-  ax_rmse.grid(True, alpha=0.3)
-  fig.tight_layout()
-  plot_path.parent.mkdir(parents=True, exist_ok=True)
-  fig.savefig(plot_path, dpi=160)
-  plt.close(fig)
 
 def main() -> None:
   logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

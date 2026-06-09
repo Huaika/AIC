@@ -1,11 +1,15 @@
-import matplotlib  # pylint: disable=import-outside-toplevel
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # pylint: disable=import-outside-toplevel
+from __future__ import annotations
 
+from pathlib import Path
+
+import pandas as pd
 
 
 def plot_metrics(metrics: pd.DataFrame, plot_path: Path, metric_id: str) -> None:
+  import matplotlib  # pylint: disable=import-outside-toplevel
 
+  matplotlib.use("Agg")
+  import matplotlib.pyplot as plt  # pylint: disable=import-outside-toplevel
 
   x_col = "day" if "day" in metrics.columns else "lead_day"
   rmse_col = f"{metric_id}_rmse_k"
