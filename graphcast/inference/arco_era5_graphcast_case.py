@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 from pathlib import Path
+import time
 from typing import Iterable
 
 import numpy as np
@@ -32,6 +35,37 @@ STATIC_ALIASES = {
     "land_sea_mask": ("land_sea_mask", "lsm"),
 }
 PRECIPITATION_ALIASES = ("total_precipitation_6hr", "total_precipitation", "tp")
+TRUE_ENV_VALUES = {"1", "true", "yes", "on"}
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+  value = os.environ.get(name)
+  if value is None:
+    return default
+  return value.lower() in TRUE_ENV_VALUES
+
+
+def arco_chunks_setting():
+  value = os.environ.get("GRAPHCAST_ARCO_CHUNKS", "none").lower()
+  if value in {"none", "false", "0"}:
+    return None
+  if value == "native":
+    return {}
+  if value == "auto":
+    return "auto"
+  raise ValueError(
+      "GRAPHCAST_ARCO_CHUNKS must be one of: none, native, auto."
+  )
+
+
+@contextlib.contextmanager
+def log_duration(message: str):
+  start = time.monotonic()
+  logging.info("%s ...", message)
+  try:
+    yield
+  finally:
+    logging.info("%s done in %.1f s", message, time.monotonic() - start)
 
 
 def requested_datetimes(
@@ -64,6 +98,13 @@ def default_case_path(
 
 def open_arco_era5(arco_path: str = DEFAULT_ARCO_ERA5_PATH) -> xr.Dataset:
   logging.info("Opening ARCO ERA5: %s", arco_path)
+  consolidated = env_flag("GRAPHCAST_ARCO_CONSOLIDATED", default=False)
+  chunks = arco_chunks_setting()
+  logging.info(
+      "ARCO open settings: consolidated=%s, chunks=%s",
+      consolidated,
+      "none" if chunks is None else chunks,
+  )
   storage_options = {"token": "anon"} if arco_path.startswith("gs://") else None
   if storage_options is not None:
     try:
@@ -75,23 +116,32 @@ def open_arco_era5(arco_path: str = DEFAULT_ARCO_ERA5_PATH) -> xr.Dataset:
       ) from exc
 
   try:
-    return xr.open_zarr(
-        arco_path,
-        chunks={},
-        consolidated=True,
-        storage_options=storage_options,
-    )
+    with log_duration("Opening ARCO ERA5 Zarr metadata with xarray.open_zarr"):
+      dataset = xr.open_zarr(
+          arco_path,
+          chunks=chunks,
+          consolidated=consolidated,
+          storage_options=storage_options,
+      )
+    logging.info("ARCO ERA5 opened. Dimensions: %s", dict(dataset.sizes))
+    logging.info("ARCO ERA5 data variables: %d", len(dataset.data_vars))
+    return dataset
   except Exception as open_zarr_error:  # pylint: disable=broad-exception-caught
-    backend_kwargs = {"consolidated": True}
+    logging.warning("xarray.open_zarr failed; trying xarray.open_dataset(engine='zarr')")
+    backend_kwargs = {"consolidated": consolidated}
     if storage_options is not None:
       backend_kwargs["storage_options"] = storage_options
     try:
-      return xr.open_dataset(
-          arco_path,
-          engine="zarr",
-          chunks={},
-          backend_kwargs=backend_kwargs,
-      )
+      with log_duration("Opening ARCO ERA5 Zarr metadata with xarray.open_dataset"):
+        dataset = xr.open_dataset(
+            arco_path,
+            engine="zarr",
+            chunks=chunks,
+            backend_kwargs=backend_kwargs,
+        )
+      logging.info("ARCO ERA5 opened. Dimensions: %s", dict(dataset.sizes))
+      logging.info("ARCO ERA5 data variables: %d", len(dataset.data_vars))
+      return dataset
     except Exception as open_dataset_error:  # pylint: disable=broad-exception-caught
       raise RuntimeError(
           f"Could not open ARCO ERA5 Zarr store {arco_path!r}."
@@ -154,7 +204,9 @@ def precipitation_6hr(
     step_hours: int,
 ) -> xr.DataArray:
   source_name = find_variable(ds, PRECIPITATION_ALIASES, "total_precipitation_6hr")
+  logging.info("Using ARCO precipitation source variable: %s", source_name)
   if source_name == "total_precipitation_6hr":
+    logging.info("Selecting existing total_precipitation_6hr at target times")
     return select_times(ds[[source_name]], times)[source_name]
 
   hour = np.timedelta64(1, "h")
@@ -165,9 +217,15 @@ def precipitation_6hr(
       hour,
       dtype="datetime64[ns]",
   )
+  logging.info(
+      "Selecting hourly precipitation window: %s to %s (%d frames)",
+      hourly_times[0],
+      hourly_times[-1],
+      len(hourly_times),
+  )
   hourly = select_times(ds[[source_name]], hourly_times)[source_name]
-  return hourly.rolling(time=window_hours, min_periods=window_hours).sum().sel(
-      time=times)
+  logging.info("Building %d-hour rolling precipitation accumulation", window_hours)
+  return hourly.rolling(time=window_hours, min_periods=window_hours).sum().sel(time=times)
 
 
 def build_graphcast_case_from_arco(
@@ -179,7 +237,16 @@ def build_graphcast_case_from_arco(
 ) -> xr.Dataset:
   times = requested_datetimes(init_time, rollout_steps, step_hours)
   time_coord = np.arange(len(times)) * np.timedelta64(step_hours, "h")
+  logging.info(
+      "Building GraphCast case for init %s: %s to %s (%d frames)",
+      init_time,
+      times[0],
+      times[-1],
+      len(times),
+  )
+  logging.info("Requested pressure levels: %s", list(pressure_levels))
   arco = normalize_dims_and_coords(arco)
+  logging.info("Normalized ARCO dimensions: %s", dict(arco.sizes))
 
   atmospheric_sources = {
       graphcast_name: find_variable(arco, aliases, graphcast_name)
@@ -193,14 +260,21 @@ def build_graphcast_case_from_arco(
       graphcast_name: find_variable(arco, aliases, graphcast_name)
       for graphcast_name, aliases in STATIC_ALIASES.items()
   }
+  logging.info("ARCO atmospheric variable mapping: %s", atmospheric_sources)
+  logging.info("ARCO surface variable mapping: %s", surface_sources)
+  logging.info("ARCO static variable mapping: %s", static_sources)
 
   source_names = set(atmospheric_sources.values()) | set(surface_sources.values())
   source_names |= set(static_sources.values())
+  logging.info("Selecting %d ARCO variables at %d target/input times",
+               len(source_names), len(times))
   dynamic = select_times(arco[list(source_names)], times)
   if "level" in dynamic.coords:
+    logging.info("Selecting %d pressure levels", len(pressure_levels))
     dynamic = dynamic.sel(level=list(pressure_levels))
     dynamic = dynamic.assign_coords(
         level=np.asarray(pressure_levels, dtype=np.int32))
+  logging.info("Selected dynamic ARCO dimensions: %s", dict(dynamic.sizes))
 
   data_vars: dict[str, xr.DataArray] = {}
   for graphcast_name, source_name in atmospheric_sources.items():
@@ -237,7 +311,7 @@ def build_graphcast_case_from_arco(
     data_vars[graphcast_name] = static.transpose("lat", "lon").astype(np.float32)
 
   dataset = xr.Dataset(data_vars)
-  return dataset.assign_coords(
+  dataset = dataset.assign_coords(
       batch=np.asarray([0], dtype=np.int32),
       time=time_coord,
       datetime=(("batch", "time"), times[None, :]),
@@ -245,6 +319,9 @@ def build_graphcast_case_from_arco(
       lon=dynamic["lon"].astype(np.float32),
       level=np.asarray(pressure_levels, dtype=np.int32),
   )
+  logging.info("Constructed lazy GraphCast case dimensions: %s", dict(dataset.sizes))
+  logging.info("Constructed GraphCast case variables: %s", ", ".join(sorted(dataset.data_vars)))
+  return dataset
 
 
 def build_encoding(dataset: xr.Dataset, compression_level: int) -> dict[str, dict[str, object]]:
@@ -302,21 +379,25 @@ def ensure_arco_graphcast_case(
     logging.info("Reusing cached ARCO GraphCast case: %s", output_path)
     return output_path
 
+  logging.info("ARCO GraphCast case cache path: %s", output_path)
   output_path.parent.mkdir(parents=True, exist_ok=True)
   arco = open_arco_era5(arco_path)
-  dataset = build_graphcast_case_from_arco(
-      arco,
-      init_time,
-      rollout_steps,
-      step_hours,
-      tuple(int(level) for level in pressure_levels),
-  )
+  with log_duration("Building lazy GraphCast case from ARCO selection"):
+    dataset = build_graphcast_case_from_arco(
+        arco,
+        init_time,
+        rollout_steps,
+        step_hours,
+        tuple(int(level) for level in pressure_levels),
+    )
   logging.info("ARCO case dimensions: %s", dict(dataset.sizes))
-  logging.info("Writing ARCO GraphCast case: %s", output_path)
-  dataset.to_netcdf(
-      output_path,
-      engine="netcdf4",
-      encoding=build_encoding(dataset, compression_level),
-  )
+  logging.info("This write triggers the actual ARCO data reads.")
+  with log_duration(f"Writing ARCO GraphCast case NetCDF to {output_path}"):
+    dataset.to_netcdf(
+        output_path,
+        engine="netcdf4",
+        encoding=build_encoding(dataset, compression_level),
+    )
   remove_decode_conflicting_time_attrs(output_path)
+  logging.info("Finished cached ARCO GraphCast case: %s", output_path)
   return output_path

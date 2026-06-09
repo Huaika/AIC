@@ -44,8 +44,16 @@ DEFAULT_SEED = 1
 KEEP_INPUTS_ON_DEVICE = True
 METRICS_FREQUENCY = os.environ.get("GRAPHCAST_METRICS_FREQUENCY", "daily")
 REFERENCE_MODE = os.environ.get("GRAPHCAST_REFERENCE_MODE", "auto")
-OUTPUT_CSV = Path(os.environ.get("GRAPHCAST_OUTPUT_CSV", "t2m_drift_metrics.csv"))
-PLOT_PATH = Path(os.environ.get("GRAPHCAST_PLOT_PATH", "t2m_drift_metrics.png"))
+METRIC_VARIABLE = os.environ.get("GRAPHCAST_METRIC_VARIABLE", "2m_temperature")
+METRIC_LEVEL = os.environ.get("GRAPHCAST_METRIC_LEVEL")
+METRIC_LEVEL = int(METRIC_LEVEL) if METRIC_LEVEL else None
+METRIC_ID = (
+    f"{METRIC_VARIABLE}_{METRIC_LEVEL}hPa"
+    if METRIC_LEVEL is not None
+    else METRIC_VARIABLE
+).replace(" ", "_")
+OUTPUT_CSV = Path(os.environ.get("GRAPHCAST_OUTPUT_CSV", f"{METRIC_ID}_metrics.csv"))
+PLOT_PATH = Path(os.environ.get("GRAPHCAST_PLOT_PATH", f"{METRIC_ID}_metrics.png"))
 WRITE_PLOT = os.environ.get("GRAPHCAST_NO_PLOT", "").lower() not in {
     "1",
     "true",
@@ -415,6 +423,8 @@ def run_autoregressive_rollout(
     rollout_steps: int,
     step_hours: int,
     keep_inputs_on_device: bool,
+    metric_variable: str,
+    metric_level: int | None,
 ) -> xr.DataArray:
   jax = modules["jax"]
   rng = jax.random.PRNGKey(rng_seed)
@@ -423,7 +433,7 @@ def run_autoregressive_rollout(
       time=base_target_time)
   current_inputs = inputs
   input_time_coords = inputs.coords["time"]
-  t2m_predictions = []
+  metric_predictions = []
 
   for step in range(rollout_steps):
     lead_hours = (step + 1) * step_hours
@@ -448,8 +458,9 @@ def run_autoregressive_rollout(
     )
 
     predictions_actual_time = predictions.assign_coords(time=actual_target_time)
-    t2m_predictions.append(
-        jax.device_get(predictions_actual_time["2m_temperature"]))
+    metric_predictions.append(
+        jax.device_get(select_metric_field(
+            predictions_actual_time, metric_variable, metric_level)))
 
     if not keep_inputs_on_device:
       predictions = jax.device_get(predictions)
@@ -461,7 +472,7 @@ def run_autoregressive_rollout(
       current_inputs = next_inputs_from_prediction(
           current_inputs, next_frame).assign_coords(time=input_time_coords)
 
-  return xr.concat(t2m_predictions, dim="time")
+  return xr.concat(metric_predictions, dim="time")
 
 
 def next_inputs_from_prediction(prev_inputs: xr.Dataset, next_frame: xr.Dataset) -> xr.Dataset:
@@ -492,16 +503,49 @@ def lat_weighted_global_mean(field: xr.DataArray) -> xr.DataArray:
   return result
 
 
+def select_metric_field(
+    dataset: xr.Dataset,
+    variable: str,
+    level: int | None,
+) -> xr.DataArray:
+  if variable not in dataset:
+    available = ", ".join(sorted(dataset.data_vars))
+    raise KeyError(f"Variable {variable!r} not found. Available variables: {available}")
+
+  field = dataset[variable]
+  if "level" in field.dims:
+    if level is None:
+      raise ValueError(
+          f"Variable {variable!r} has a level dimension. Set "
+          "GRAPHCAST_METRIC_LEVEL, for example GRAPHCAST_METRIC_LEVEL=850."
+      )
+    if level not in set(int(value) for value in field.coords["level"].values):
+      raise ValueError(
+          f"Level {level} is not available for {variable!r}. Available levels: "
+          f"{field.coords['level'].values.tolist()}"
+      )
+    return field.sel(level=level)
+
+  if level is not None:
+    raise ValueError(
+        f"GRAPHCAST_METRIC_LEVEL={level} was set, but {variable!r} has no "
+        "level dimension."
+    )
+  return field
+
+
 def selected_reference(
-    predictions_t2m: xr.DataArray,
+    predictions: xr.DataArray,
     inputs: xr.Dataset,
     truth: xr.Dataset | None,
     reference_mode: str,
+    metric_variable: str,
+    metric_level: int | None,
 ) -> tuple[xr.DataArray, str]:
   has_full_truth = (
       truth is not None
-      and "2m_temperature" in truth
-      and truth.sizes.get("time", 0) >= predictions_t2m.sizes["time"]
+      and metric_variable in truth
+      and truth.sizes.get("time", 0) >= predictions.sizes["time"]
   )
 
   if reference_mode == "ground_truth" and not has_full_truth:
@@ -512,39 +556,48 @@ def selected_reference(
     )
 
   if reference_mode == "ground_truth" or (reference_mode == "auto" and has_full_truth):
-    ref = truth["2m_temperature"].isel(time=slice(0, predictions_t2m.sizes["time"]))
-    ref = ref.assign_coords(time=predictions_t2m.coords["time"])
+    ref = select_metric_field(truth, metric_variable, metric_level).isel(
+        time=slice(0, predictions.sizes["time"]))
+    ref = ref.assign_coords(time=predictions.coords["time"])
     return ref, "ground_truth"
 
-  return inputs["2m_temperature"].isel(time=-1), "initial_state"
+  return select_metric_field(inputs, metric_variable, metric_level).isel(
+      time=-1), "initial_state"
 
 
 def timedelta_hours(values: np.ndarray) -> np.ndarray:
   return values.astype("timedelta64[s]").astype(np.float64) / 3600.0
 
 
-def compute_t2m_metrics(
-    predictions_t2m: xr.DataArray,
+def compute_metric_summary(
+    predictions: xr.DataArray,
     inputs: xr.Dataset,
     truth: xr.Dataset | None,
     reference_mode: str,
     step_hours: int,
     metrics_frequency: str,
+    metric_variable: str,
+    metric_level: int | None,
+    metric_id: str,
 ) -> pd.DataFrame:
-  reference_t2m, reference_label = selected_reference(
-      predictions_t2m, inputs, truth, reference_mode)
-  diff = predictions_t2m - reference_t2m
+  reference_field, reference_label = selected_reference(
+      predictions, inputs, truth, reference_mode, metric_variable, metric_level)
+  diff = predictions - reference_field
 
   rmse = np.sqrt(lat_weighted_global_mean(diff ** 2))
   bias = lat_weighted_global_mean(diff)
-  lead_hours = timedelta_hours(predictions_t2m.coords["time"].values)
+  lead_hours = timedelta_hours(predictions.coords["time"].values)
+  rmse_col = f"{metric_id}_rmse_k"
+  bias_col = f"{metric_id}_mean_bias_k"
 
   frame = pd.DataFrame({
-      "step": np.arange(1, predictions_t2m.sizes["time"] + 1, dtype=np.int32),
+      "step": np.arange(1, predictions.sizes["time"] + 1, dtype=np.int32),
       "lead_hours": lead_hours,
       "lead_day": lead_hours / 24.0,
-      "t2m_rmse_k": np.asarray(rmse.values, dtype=np.float64),
-      "t2m_mean_bias_k": np.asarray(bias.values, dtype=np.float64),
+      rmse_col: np.asarray(rmse.values, dtype=np.float64),
+      bias_col: np.asarray(bias.values, dtype=np.float64),
+      "metric_variable": metric_variable,
+      "metric_level_hpa": metric_level,
       "reference": reference_label,
   })
 
@@ -557,30 +610,34 @@ def compute_t2m_metrics(
         "step",
         "lead_hours",
         "lead_day",
-        "t2m_rmse_k",
-        "t2m_mean_bias_k",
+        rmse_col,
+        bias_col,
+        "metric_variable",
+        "metric_level_hpa",
         "reference",
     ]
     frame = frame[cols]
 
   return frame
 
-def plot_metrics(metrics: pd.DataFrame, plot_path: Path) -> None:
+def plot_metrics(metrics: pd.DataFrame, plot_path: Path, metric_id: str) -> None:
   import matplotlib  # pylint: disable=import-outside-toplevel
 
   matplotlib.use("Agg")
   import matplotlib.pyplot as plt  # pylint: disable=import-outside-toplevel
 
   x_col = "day" if "day" in metrics.columns else "lead_day"
+  rmse_col = f"{metric_id}_rmse_k"
+  bias_col = f"{metric_id}_mean_bias_k"
   fig, ax_rmse = plt.subplots(figsize=(8, 4.5))
   ax_bias = ax_rmse.twinx()
 
-  ax_rmse.plot(metrics[x_col], metrics["t2m_rmse_k"], marker="o", color="#1f77b4")
-  ax_bias.plot(metrics[x_col], metrics["t2m_mean_bias_k"], marker="s", color="#d62728")
+  ax_rmse.plot(metrics[x_col], metrics[rmse_col], marker="o", color="#1f77b4")
+  ax_bias.plot(metrics[x_col], metrics[bias_col], marker="s", color="#d62728")
 
   ax_rmse.set_xlabel("Forecast day")
-  ax_rmse.set_ylabel("Latitude-weighted t2m RMSE (K)", color="#1f77b4")
-  ax_bias.set_ylabel("Latitude-weighted t2m mean bias (K)", color="#d62728")
+  ax_rmse.set_ylabel(f"Latitude-weighted {metric_id} RMSE (K)", color="#1f77b4")
+  ax_bias.set_ylabel(f"Latitude-weighted {metric_id} mean bias (K)", color="#d62728")
   ax_rmse.grid(True, alpha=0.3)
   fig.tight_layout()
   plot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -625,6 +682,11 @@ def main() -> None:
   logging.info("Reference target dims: %s", dict(reference_targets.sizes))
   logging.info("Checkpoint: %s", checkpoint_name)
   logging.info("Loaded stats: %s", ", ".join(sorted(stats)))
+  logging.info(
+      "Metric variable: %s%s",
+      METRIC_VARIABLE,
+      f" at {METRIC_LEVEL} hPa" if METRIC_LEVEL is not None else "",
+  )
   
   predictor = build_jitted_predictor(
     modules,
@@ -635,7 +697,7 @@ def main() -> None:
   )
   
   logging.info("Starting autoregressive rollout")
-  predictions_t2m = run_autoregressive_rollout(
+  predictions = run_autoregressive_rollout(
     modules,
     predictor,
     DEFAULT_SEED,
@@ -645,22 +707,27 @@ def main() -> None:
     rollout_steps,
     step_hours,
     KEEP_INPUTS_ON_DEVICE,
+    METRIC_VARIABLE,
+    METRIC_LEVEL,
   )
 
-  metrics = compute_t2m_metrics(
-      predictions_t2m,
+  metrics = compute_metric_summary(
+      predictions,
       inputs,
       reference_targets,
       REFERENCE_MODE,
       step_hours,
       METRICS_FREQUENCY,
+      METRIC_VARIABLE,
+      METRIC_LEVEL,
+      METRIC_ID,
   )
   OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
   metrics.to_csv(OUTPUT_CSV, index=False)
   logging.info("Wrote metrics CSV: %s", OUTPUT_CSV)
 
   if WRITE_PLOT:
-    plot_metrics(metrics, PLOT_PATH)
+    plot_metrics(metrics, PLOT_PATH, METRIC_ID)
     logging.info("Wrote metrics plot: %s", PLOT_PATH)
 
   logging.info("Checkpoint: %s", checkpoint_name)
