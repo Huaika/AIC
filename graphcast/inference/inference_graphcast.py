@@ -444,9 +444,10 @@ def run_autoregressive_rollout(
   jax = modules["jax"]
   rng = jax.random.PRNGKey(rng_seed)
   base_target_time = targets_template.coords["time"].isel(time=slice(0, 1))
-  one_step_template = targets_template.isel(time=slice(0, 1)).assign_coords(
-      time=base_target_time)
-  current_inputs = inputs
+  one_step_template = xr.full_like(
+      targets_template.isel(time=slice(0, 1)), np.nan).assign_coords(
+          time=base_target_time).compute()
+  current_inputs = inputs.compute()
   input_time_coords = inputs.coords["time"]
   metric_predictions = []
 
