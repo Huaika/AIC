@@ -37,6 +37,7 @@ setup(
         "dinosaur-dycore",
         "dm-haiku",
         "dm-tree",
+        "gcsfs",
         "jax",
         "jraph",
         "matplotlib",
