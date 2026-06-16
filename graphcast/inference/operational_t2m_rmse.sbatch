@@ -15,7 +15,7 @@ set -euo pipefail
 REPO_ROOT="${SLURM_SUBMIT_DIR:-/home/ka/ka_iti/ka_ou7270/AIC}"
 PYTHON="${PYTHON:-/home/ka/ka_iti/ka_ou7270/miniconda3/envs/graphcast_env/bin/python}"
 
-INIT_TIME="${INIT_TIME:-1955-01-01T06:00}"
+INIT_TIME="${INIT_TIME:-2023-01-07T06:00}"
 INIT_LABEL="${INIT_TIME//-/}"
 INIT_LABEL="${INIT_LABEL//:/}"
 INIT_LABEL="${INIT_LABEL//T/_}"
@@ -30,8 +30,8 @@ METRICS_FREQUENCY="${METRICS_FREQUENCY:-daily}"
 REFERENCE="${REFERENCE:-auto}"
 ARCO_CONSOLIDATED="${ARCO_CONSOLIDATED:-false}"
 ARCO_CHUNKS="${ARCO_CHUNKS:-none}"
-METRIC_VARIABLE="${METRIC_VARIABLE:-2m_temperature}"
-METRIC_LEVEL="${METRIC_LEVEL:-}"
+METRIC_VARIABLE="${METRIC_VARIABLE:-temperature}"   # 2m_temperature
+METRIC_LEVEL="${METRIC_LEVEL:-850}"
 METRIC_LABEL="${METRIC_VARIABLE// /_}"
 METRIC_LABEL="${METRIC_LABEL//\//_}"
 if [[ -n "${METRIC_LEVEL}" ]]; then
@@ -43,6 +43,7 @@ mkdir -p "${REPO_ROOT}/logs" "${CACHE_DIR}" "${OUT_DIR}"
 export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.90}"
 export TF_CPP_MIN_LOG_LEVEL="${TF_CPP_MIN_LOG_LEVEL:-1}"
+export MPLCONFIGDIR="${MPLCONFIGDIR:-${CACHE_DIR}/matplotlib}"
 export GRAPHCAST_CACHE_DIR="${CACHE_DIR}"
 export GRAPHCAST_ROLLOUT_STEPS="${ROLLOUT_STEPS}"
 export GRAPHCAST_STEP_HOURS=6
@@ -56,6 +57,8 @@ else
 fi
 export GRAPHCAST_OUTPUT_CSV="${OUT_DIR}/${METRIC_LABEL}_rmse_bias_operational_daily.csv"
 export GRAPHCAST_PLOT_PATH="${OUT_DIR}/${METRIC_LABEL}_rmse_bias_operational_daily.png"
+export GRAPHCAST_EVOLUTION_CSV="${OUT_DIR}/${METRIC_LABEL}_global_mean_evolution.csv"
+export GRAPHCAST_EVOLUTION_PLOT_PATH="${OUT_DIR}/${METRIC_LABEL}_global_mean_evolution.png"
 export GRAPHCAST_USE_ARCO="${USE_ARCO}"
 if [[ "${USE_ARCO,,}" == "1" || "${USE_ARCO,,}" == "true" || "${USE_ARCO,,}" == "yes" ]]; then
   export GRAPHCAST_INIT_TIME="${INIT_TIME}"
@@ -98,3 +101,5 @@ nvidia-smi || true
 echo "Done. Results:"
 echo "${GRAPHCAST_OUTPUT_CSV}"
 echo "${GRAPHCAST_PLOT_PATH}"
+echo "${GRAPHCAST_EVOLUTION_CSV}"
+echo "${GRAPHCAST_EVOLUTION_PLOT_PATH}"

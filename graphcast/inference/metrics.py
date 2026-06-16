@@ -84,6 +84,72 @@ def timedelta_hours(values: np.ndarray) -> np.ndarray:
   return values.astype("timedelta64[s]").astype(np.float64) / 3600.0
 
 
+def scalar_value(value: xr.DataArray) -> float:
+  return float(np.asarray(value.values, dtype=np.float64).mean())
+
+
+def compute_global_mean_evolution(
+    predictions: xr.DataArray,
+    inputs: xr.Dataset,
+    truth: xr.Dataset | None,
+    reference_mode: str,
+    metric_variable: str,
+    metric_level: int | None,
+    metric_id: str,
+    init_time: str | None,
+    model_label: str = "GraphCast",
+    scenario_label: str | None = None,
+) -> pd.DataFrame:
+  forecast_mean = lat_weighted_global_mean(predictions)
+  initial_field = select_metric_field(inputs, metric_variable, metric_level).isel(time=-1)
+  initial_mean = scalar_value(lat_weighted_global_mean(initial_field))
+  lead_hours = timedelta_hours(predictions.coords["time"].values)
+
+  reference_values = np.full(predictions.sizes["time"], np.nan, dtype=np.float64)
+  reference_label = "initial_state"
+  has_full_truth = (
+      truth is not None
+      and metric_variable in truth
+      and truth.sizes.get("time", 0) >= predictions.sizes["time"]
+  )
+
+  if reference_mode == "ground_truth" and not has_full_truth:
+    raise ValueError(
+        "Ground truth requested, but the dataset does not contain all rollout "
+        "target steps. Use REFERENCE_MODE='initial_state' or provide a longer "
+        "dataset."
+    )
+
+  if reference_mode == "ground_truth" or (reference_mode == "auto" and has_full_truth):
+    reference_field = select_metric_field(truth, metric_variable, metric_level).isel(
+        time=slice(0, predictions.sizes["time"]))
+    reference_field = reference_field.assign_coords(time=predictions.coords["time"])
+    reference_values = np.asarray(
+        lat_weighted_global_mean(reference_field).values,
+        dtype=np.float64,
+    )
+    reference_label = "ground_truth"
+
+  forecast_values = np.asarray(forecast_mean.values, dtype=np.float64)
+  return pd.DataFrame({
+      "model": model_label,
+      "scenario": scenario_label or "",
+      "init_time": init_time or "",
+      "step": np.arange(1, predictions.sizes["time"] + 1, dtype=np.int32),
+      "lead_hours": lead_hours,
+      "lead_day": lead_hours / 24.0,
+      "global_mean_k": forecast_values,
+      "global_mean_anomaly_k": forecast_values - initial_mean,
+      "reference_global_mean_k": reference_values,
+      "reference_global_mean_anomaly_k": reference_values - initial_mean,
+      "initial_global_mean_k": initial_mean,
+      "metric_id": metric_id,
+      "metric_variable": metric_variable,
+      "metric_level_hpa": metric_level,
+      "reference": reference_label,
+  })
+
+
 def compute_metric_summary(
     predictions: xr.DataArray,
     inputs: xr.Dataset,

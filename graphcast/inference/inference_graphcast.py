@@ -22,11 +22,19 @@ from graphcast import rollout  # pylint: disable=import-outside-toplevel
 from graphcast import xarray_jax  # pylint: disable=import-outside-toplevel,unused-import
 
 if __package__:
-  from .metrics import compute_metric_summary, select_metric_field
-  from .plots import plot_metrics
+  from .metrics import (
+      compute_global_mean_evolution,
+      compute_metric_summary,
+      select_metric_field,
+  )
+  from .plots import plot_global_mean_evolution, plot_metrics
 else:
-  from metrics import compute_metric_summary, select_metric_field
-  from plots import plot_metrics
+  from metrics import (
+      compute_global_mean_evolution,
+      compute_metric_summary,
+      select_metric_field,
+  )
+  from plots import plot_global_mean_evolution, plot_metrics
 
 
 GCS_BUCKET = "dm_graphcast"
@@ -59,6 +67,15 @@ METRIC_ID = (
 ).replace(" ", "_")
 OUTPUT_CSV = Path(os.environ.get("GRAPHCAST_OUTPUT_CSV", f"{METRIC_ID}_metrics.csv"))
 PLOT_PATH = Path(os.environ.get("GRAPHCAST_PLOT_PATH", f"{METRIC_ID}_metrics.png"))
+EVOLUTION_CSV = Path(
+    os.environ.get("GRAPHCAST_EVOLUTION_CSV", f"{METRIC_ID}_global_mean_evolution.csv")
+)
+EVOLUTION_PLOT_PATH = Path(
+    os.environ.get(
+        "GRAPHCAST_EVOLUTION_PLOT_PATH",
+        f"{METRIC_ID}_global_mean_evolution.png",
+    )
+)
 WRITE_PLOT = os.environ.get("GRAPHCAST_NO_PLOT", "").lower() not in {
     "1",
     "true",
@@ -572,6 +589,25 @@ def main() -> None:
     METRIC_VARIABLE,
     METRIC_LEVEL,
   )
+
+  evolution = compute_global_mean_evolution(
+      predictions,
+      inputs,
+      reference_targets,
+      REFERENCE_MODE,
+      METRIC_VARIABLE,
+      METRIC_LEVEL,
+      METRIC_ID,
+      os.environ.get("GRAPHCAST_INIT_TIME"),
+      scenario_label=os.environ.get("GRAPHCAST_SCENARIO_LABEL"),
+  )
+  EVOLUTION_CSV.parent.mkdir(parents=True, exist_ok=True)
+  evolution.to_csv(EVOLUTION_CSV, index=False)
+  logging.info("Wrote global-mean evolution CSV: %s", EVOLUTION_CSV)
+
+  if WRITE_PLOT:
+    plot_global_mean_evolution(evolution, EVOLUTION_PLOT_PATH, METRIC_ID)
+    logging.info("Wrote global-mean evolution plot: %s", EVOLUTION_PLOT_PATH)
 
   metrics = compute_metric_summary(
       predictions,
