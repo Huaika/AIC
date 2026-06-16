@@ -15,15 +15,29 @@ set -euo pipefail
 REPO_ROOT="${SLURM_SUBMIT_DIR:-/home/ka/ka_iti/ka_ou7270/AIC}"
 PYTHON="${PYTHON:-/home/ka/ka_iti/ka_ou7270/miniconda3/envs/graphcast_env/bin/python}"
 
-INIT_TIME="${INIT_TIME:-2023-01-07T06:00}"
+USE_NEXTGEMS="${USE_NEXTGEMS:-0}"
+if [[ "${USE_NEXTGEMS,,}" == "1" || "${USE_NEXTGEMS,,}" == "true" || "${USE_NEXTGEMS,,}" == "yes" ]]; then
+  INIT_TIME="${INIT_TIME:-2049-01-01T06:00}"
+  USE_ARCO="${USE_ARCO:-0}"
+else
+  INIT_TIME="${INIT_TIME:-2023-01-07T06:00}"
+  USE_ARCO="${USE_ARCO:-1}"
+fi
 INIT_LABEL="${INIT_TIME//-/}"
 INIT_LABEL="${INIT_LABEL//:/}"
 INIT_LABEL="${INIT_LABEL//T/_}"
-USE_ARCO="${USE_ARCO:-1}"
 LOCAL_DATASET_PATH="${GRAPHCAST_REFERENCE_ERA5:-${REPO_ROOT}/graphcast/data/graphcast/dataset/pre_industrial/graphcast_1955_init_19550101_06.nc}"
-RUN_ID="${RUN_ID:-operational_${INIT_LABEL}_10d_${SLURM_JOB_ID:-manual}}"
+NEXTGEMS_YEAR="${NEXTGEMS_YEAR:-2049}"
+if [[ "${USE_NEXTGEMS,,}" == "1" || "${USE_NEXTGEMS,,}" == "true" || "${USE_NEXTGEMS,,}" == "yes" ]]; then
+  DEFAULT_RUN_ID="nextgems_${NEXTGEMS_YEAR}_${INIT_LABEL}_10d_${SLURM_JOB_ID:-manual}"
+else
+  DEFAULT_RUN_ID="operational_${INIT_LABEL}_10d_${SLURM_JOB_ID:-manual}"
+fi
+RUN_ID="${RUN_ID:-${DEFAULT_RUN_ID}}"
 CACHE_DIR="${CACHE_DIR:-/scratch/${USER}/graphcast_cache}"
 ARCO_CASE_CACHE_DIR="${ARCO_CASE_CACHE_DIR:-${CACHE_DIR}/arco_cases}"
+NEXTGEMS_ROOT="${NEXTGEMS_ROOT:-/pfs/work9/workspace/scratch/ka_je2428-nextgems_${NEXTGEMS_YEAR}}"
+NEXTGEMS_CASE_CACHE_DIR="${NEXTGEMS_CASE_CACHE_DIR:-${CACHE_DIR}/nextgems_cases}"
 OUT_DIR="${OUT_DIR:-${REPO_ROOT}/graphcast/results/${RUN_ID}}"
 ROLLOUT_STEPS="${ROLLOUT_STEPS:-40}"
 METRICS_FREQUENCY="${METRICS_FREQUENCY:-daily}"
@@ -59,8 +73,15 @@ export GRAPHCAST_OUTPUT_CSV="${OUT_DIR}/${METRIC_LABEL}_rmse_bias_operational_da
 export GRAPHCAST_PLOT_PATH="${OUT_DIR}/${METRIC_LABEL}_rmse_bias_operational_daily.png"
 export GRAPHCAST_EVOLUTION_CSV="${OUT_DIR}/${METRIC_LABEL}_global_mean_evolution.csv"
 export GRAPHCAST_EVOLUTION_PLOT_PATH="${OUT_DIR}/${METRIC_LABEL}_global_mean_evolution.png"
+export GRAPHCAST_USE_NEXTGEMS="${USE_NEXTGEMS}"
 export GRAPHCAST_USE_ARCO="${USE_ARCO}"
-if [[ "${USE_ARCO,,}" == "1" || "${USE_ARCO,,}" == "true" || "${USE_ARCO,,}" == "yes" ]]; then
+if [[ "${USE_NEXTGEMS,,}" == "1" || "${USE_NEXTGEMS,,}" == "true" || "${USE_NEXTGEMS,,}" == "yes" ]]; then
+  export GRAPHCAST_INIT_TIME="${INIT_TIME}"
+  export GRAPHCAST_NEXTGEMS_YEAR="${NEXTGEMS_YEAR}"
+  export GRAPHCAST_NEXTGEMS_ROOT="${NEXTGEMS_ROOT}"
+  export GRAPHCAST_NEXTGEMS_CASE_CACHE_DIR="${NEXTGEMS_CASE_CACHE_DIR}"
+  export GRAPHCAST_SCENARIO_LABEL="${GRAPHCAST_SCENARIO_LABEL:-nextgems_${NEXTGEMS_YEAR}}"
+elif [[ "${USE_ARCO,,}" == "1" || "${USE_ARCO,,}" == "true" || "${USE_ARCO,,}" == "yes" ]]; then
   export GRAPHCAST_INIT_TIME="${INIT_TIME}"
   export GRAPHCAST_ARCO_CASE_CACHE_DIR="${ARCO_CASE_CACHE_DIR}"
   export GRAPHCAST_ARCO_ERA5_PATH="${GRAPHCAST_ARCO_ERA5_PATH:-gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3}"
@@ -74,9 +95,14 @@ cd "${REPO_ROOT}"
 
 echo "Job ID: ${SLURM_JOB_ID:-manual}"
 echo "Node: ${SLURMD_NODENAME:-unknown}"
+echo "Use NextGEMS: ${USE_NEXTGEMS}"
 echo "Use ARCO: ${USE_ARCO}"
 echo "Initialization time: ${INIT_TIME}"
-if [[ "${USE_ARCO,,}" == "1" || "${USE_ARCO,,}" == "true" || "${USE_ARCO,,}" == "yes" ]]; then
+if [[ "${USE_NEXTGEMS,,}" == "1" || "${USE_NEXTGEMS,,}" == "true" || "${USE_NEXTGEMS,,}" == "yes" ]]; then
+  echo "NextGEMS year: ${NEXTGEMS_YEAR}"
+  echo "NextGEMS root: ${NEXTGEMS_ROOT}"
+  echo "NextGEMS case cache: ${NEXTGEMS_CASE_CACHE_DIR}"
+elif [[ "${USE_ARCO,,}" == "1" || "${USE_ARCO,,}" == "true" || "${USE_ARCO,,}" == "yes" ]]; then
   echo "ARCO source: ${GRAPHCAST_ARCO_ERA5_PATH}"
   echo "ARCO case cache: ${ARCO_CASE_CACHE_DIR}"
   echo "ARCO consolidated metadata: ${ARCO_CONSOLIDATED}"

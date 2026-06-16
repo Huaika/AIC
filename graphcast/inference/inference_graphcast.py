@@ -251,6 +251,38 @@ def configured_reference_era5_uri(
     step_hours: int,
 ) -> str:
   init_time = os.environ.get("GRAPHCAST_INIT_TIME")
+  if env_flag("GRAPHCAST_USE_NEXTGEMS"):
+    if not init_time:
+      raise ValueError(
+          "GRAPHCAST_USE_NEXTGEMS is enabled, but GRAPHCAST_INIT_TIME is unset."
+      )
+
+    from nextgems_graphcast_case import (  # pylint: disable=import-outside-toplevel
+        ensure_nextgems_graphcast_case,
+    )
+
+    case_cache_dir = Path(
+        os.environ.get(
+            "GRAPHCAST_NEXTGEMS_CASE_CACHE_DIR",
+            str(cache_dir / "nextgems_cases"),
+        )
+    ).expanduser()
+    output_path = os.environ.get("GRAPHCAST_NEXTGEMS_CASE_PATH")
+    root = os.environ.get("GRAPHCAST_NEXTGEMS_ROOT")
+    case_path = ensure_nextgems_graphcast_case(
+        case_cache_dir,
+        init_time,
+        rollout_steps,
+        step_hours,
+        tuple(int(level) for level in task_config.pressure_levels),
+        year=int(os.environ.get("GRAPHCAST_NEXTGEMS_YEAR", "2049")),
+        root=Path(root).expanduser() if root else None,
+        output_path=Path(output_path).expanduser() if output_path else None,
+        overwrite=env_flag("GRAPHCAST_NEXTGEMS_OVERWRITE"),
+        compression_level=int(os.environ.get("GRAPHCAST_NEXTGEMS_COMPRESSION_LEVEL", "1")),
+    )
+    return str(case_path)
+
   if not env_flag("GRAPHCAST_USE_ARCO", default=bool(init_time)):
     return reference_era5_uri()
   if not init_time:
