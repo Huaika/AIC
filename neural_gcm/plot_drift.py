@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""Drift statistics (year-mean RMSE + bias vs lead time) -- RUN-AGNOSTIC.
+"""Drift statistics (year-mean RMSE + bias vs lead time) -- RUN/VARIABLE-agnostic.
 
-For each init-day d and lead step s:  diff = T_pred(d,s) - T_ref(valid_time)
-on the model grid; mse(s)=mean_d<diff^2>, bias(s)=mean_d<diff>, RMSE=sqrt(mse).
-One twin-axis figure per requested level. Run selected via EVAL_RUN.
+For each init-day d and lead step s:  diff = pred(d,s) - ref(valid_time) on the
+model grid; mse(s)=mean_d<diff^2>, bias(s)=mean_d<diff>, RMSE=sqrt(mse). One
+twin-axis figure per (variable, level). Run via EVAL_RUN, variables via EVAL_VARS.
 
 For ERA5 runs the reference is real truth, so these are genuine forecast-skill
 curves; for NextGEMS-2049 the reference is NextGEMS itself (drift).
@@ -21,19 +21,20 @@ YEAR = C.YEAR
 FIGDIR = C.figure_dir("drift_stats")
 
 
-def build_drift(levels, truth) -> pd.DataFrame:
-    csv = C.OUTDIR / f"{C.RUN}_drift_per_init_{C.level_tag()}.csv"
+def build_drift(var, short, levels, truth) -> pd.DataFrame:
+    csv = C.OUTDIR / f"{C.RUN}_drift_per_init_{short}_{C.level_tag()}.csv"
     if csv.exists():
         print(f"[drift] cached {csv}")
         return pd.read_csv(csv, parse_dates=["init_date"])
     files = sorted(C.PRED_DIR.glob(f"pred_{YEAR}_*.nc"))
-    print(f"[drift] scoring {len(files)} rollouts vs {C.REF_LABEL} at {len(levels)} levels")
+    print(f"[drift] scoring {len(files)} rollouts vs {C.REF_LABEL} "
+          f"({var}) at {len(levels)} levels")
     rows = []
     for i, f in enumerate(files):
         ds = xr.open_dataset(f)
         init = pd.to_datetime(ds.attrs.get("init_date",
                                            f.stem.replace(f"pred_{YEAR}_", "")))
-        pred = ds["temperature"].sel(level=levels)
+        pred = ds[var].sel(level=levels)
         tru = truth.sel(time=ds["valid_time"].values, method="nearest")
         tru = tru.assign_coords(time=pred["time"].values)
         diff = pred - tru
@@ -54,20 +55,23 @@ def build_drift(levels, truth) -> pd.DataFrame:
     return df
 
 
-def aggregate(df) -> pd.DataFrame:
+def aggregate(df, short) -> pd.DataFrame:
     agg = (df.groupby(["level", "lead_hours"], as_index=False)
              .agg(mse=("mse", "mean"), bias=("bias", "mean"),
                   n_init=("init_date", "nunique")))
     agg["rmse"] = np.sqrt(agg["mse"])
     agg["lead_day"] = agg["lead_hours"] / 24.0
-    agg.to_csv(C.OUTDIR / f"{C.RUN}_drift_yearmean_{C.level_tag()}.csv", index=False)
+    agg.to_csv(C.OUTDIR / f"{C.RUN}_drift_yearmean_{short}_{C.level_tag()}.csv",
+               index=False)
     return agg
 
 
-def main():
-    levels = C.requested_levels()
-    truth = C.truth_at_levels(levels)
-    agg = aggregate(build_drift(levels, truth))
+def plot_variable(var, levels):
+    meta = C.VARIABLES[var]
+    short, units, label = meta["short"], meta["units"], meta["label"]
+    print(f"=== drift stats: {var} ({short}) ===")
+    truth = C.truth_at_levels(var, levels)
+    agg = aggregate(build_drift(var, short, levels, truth), short)
 
     for lev in levels:
         a = agg[agg["level"] == lev].sort_values("lead_hours")
@@ -76,18 +80,25 @@ def main():
         ax_rmse.plot(a["lead_day"], a["rmse"], color="#1f77b4", label="RMSE")
         ax_bias.plot(a["lead_day"], a["bias"], color="#d62728", label="bias")
         ax_bias.axhline(0.0, color="#d62728", lw=0.8, ls=":", alpha=0.6)
-        ax_rmse.set_title(f"{C.REF_LABEL} — {lev} hPa T "
+        ax_rmse.set_title(f"{C.REF_LABEL} — {lev} hPa {label} "
                           f"(mean of {int(a['n_init'].iloc[0])} daily inits)")
         ax_rmse.set_xlabel("lead time (days)")
-        ax_rmse.set_ylabel("RMSE [K]", color="#1f77b4")
-        ax_bias.set_ylabel("mean bias [K]", color="#d62728")
+        ax_rmse.set_ylabel(f"RMSE [{units}]", color="#1f77b4")
+        ax_bias.set_ylabel(f"mean bias [{units}]", color="#d62728")
         ax_rmse.tick_params(axis="y", labelcolor="#1f77b4")
         ax_bias.tick_params(axis="y", labelcolor="#d62728")
         ax_rmse.grid(True, alpha=0.3)
         fig.tight_layout()
-        out = FIGDIR / f"{C.RUN}_drift_rmse_bias_L{lev:04d}.png"
+        out = FIGDIR / f"{C.RUN}_drift_rmse_bias_{short}_L{lev:04d}.png"
         fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
-        print(f"L{lev}: day-10 RMSE={a['rmse'].iloc[-1]:.3f} K bias={a['bias'].iloc[-1]:+.3f} K")
+        print(f"{short} L{lev}: day-10 RMSE={a['rmse'].iloc[-1]:.4g} {units} "
+              f"bias={a['bias'].iloc[-1]:+.4g} {units}")
+
+
+def main():
+    levels = C.requested_levels()
+    for var in C.selected_variables():
+        plot_variable(var, levels)
     print(f"done -> {FIGDIR}/")
 
 

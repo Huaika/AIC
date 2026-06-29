@@ -14,9 +14,14 @@ how the model-grid "truth" temperature is built. Both are encapsulated in the
 ``RUNS`` registry + ``truth_at_levels()`` below; the plot scripts are otherwise
 identical for all three. (NextGEMS ships 25 native levels -> linear vinterp to
 the requested levels; ERA5 already ships the 37 model levels -> the vinterp is a
-no-op there. T has no NaNs, so a plain conservative regrid is used for both.)
+no-op there. The 3D prognostics have no NaNs, so a plain conservative regrid is
+used for both.)
 
-The level set is configurable exactly as before (NG_LEVEL_INTERVAL etc.).
+Every plot family runs for each variable in ``selected_variables()`` -- the five
+core prognostics by default (temperature, geopotential, specific humidity, u/v
+wind), overridable via EVAL_VARS (see VARIABLES for the full plottable set, which
+also includes the two cloud-water-content fields). The level set is configurable
+exactly as before (NG_LEVEL_INTERVAL etc.).
 """
 from __future__ import annotations
 
@@ -46,7 +51,6 @@ RUNS = {
         truth_kind="nextgems",
         truth_src=(f"{WS}/ka_je2428-nextgems_2049/"
                    "3D_nextgems_2049_6hourly_0.25deg_lat-lon.nc"),
-        truth_rename={"t": "temperature", "lat": "latitude", "lon": "longitude"},
     ),
     "era5_1955": dict(
         year=1955,
@@ -54,7 +58,6 @@ RUNS = {
         ref_label="ERA5 1955",
         truth_kind="era5",
         truth_src=f"{WS}/ka_hc5935-ai-climate/era5_1955/inputs",
-        truth_rename={},
     ),
     "era5_2023": dict(
         year=2023,
@@ -62,7 +65,6 @@ RUNS = {
         ref_label="ERA5 2023",
         truth_kind="era5",
         truth_src=f"{WS}/ka_hc5935-ai-climate/era5_2023/inputs",
-        truth_rename={},
     ),
     # 2026 is a PARTIAL year: ERA5 staged Jan..Jun (capped at the 2026-06-23
     # data front), rollouts init 2026-01-01 .. 2026-06-13. Both pred + inputs
@@ -73,7 +75,6 @@ RUNS = {
         ref_label="ERA5 2026",
         truth_kind="era5",
         truth_src=f"{WS}/ka_dm9435-ai-climate/era5_2026/inputs",
-        truth_rename={},
     ),
 }
 
@@ -89,8 +90,58 @@ OUTDIR = Path(f"results_eval_{RUN}")
 FIGROOT = Path(f"figures/{RUN}")
 OUTDIR.mkdir(exist_ok=True)
 
-NATIVE_TRUTH_NC = OUTDIR / f"truth_modelgrid_T_{RUN}.nc"
 TRUTH_BATCH = int(os.environ.get("EVAL_TRUTH_BATCH", "24"))
+
+# --------------------------------------------------------------------------- #
+# Variable registry -- the prognostic 3D fields present in every prediction
+# file (and in both truth sources). ``short`` is the filename/label tag, used
+# for cache + figure names; ``nextgems_src`` is that variable's short name in
+# the NextGEMS 3D file (ERA5 inputs already use the canonical NeuralGCM names).
+# ``cmap`` is the field colormap for drift maps (drift itself is always RdBu_r).
+# --------------------------------------------------------------------------- #
+VARIABLES = {
+    "temperature":         dict(short="T", units="K",       nextgems_src="t",
+                                 cmap="RdYlBu_r", label="temperature"),
+    "geopotential":        dict(short="Z", units="m^2/s^2", nextgems_src="z",
+                                 cmap="viridis",  label="geopotential"),
+    "specific_humidity":   dict(short="Q", units="kg/kg",   nextgems_src="q",
+                                 cmap="viridis",  label="specific humidity"),
+    "u_component_of_wind": dict(short="U", units="m/s",      nextgems_src="u",
+                                 cmap="RdBu_r",   label="u-wind"),
+    "v_component_of_wind": dict(short="V", units="m/s",      nextgems_src="v",
+                                 cmap="RdBu_r",   label="v-wind"),
+    "specific_cloud_ice_water_content":    dict(short="CIWC", units="kg/kg",
+                                 nextgems_src="ciwc", cmap="viridis",
+                                 label="cloud ice water content"),
+    "specific_cloud_liquid_water_content": dict(short="CLWC", units="kg/kg",
+                                 nextgems_src="clwc", cmap="viridis",
+                                 label="cloud liquid water content"),
+}
+
+# The five core prognostics plotted by default; override with EVAL_VARS
+# (comma/space list of canonical names, e.g. EVAL_VARS="temperature,geopotential").
+DEFAULT_VARS = ["temperature", "geopotential", "specific_humidity",
+                "u_component_of_wind", "v_component_of_wind"]
+
+
+def selected_variables() -> list[str]:
+    env = os.environ.get("EVAL_VARS", "").strip()
+    vs = ([v.strip() for v in env.replace(",", " ").split()] if env
+          else list(DEFAULT_VARS))
+    bad = [v for v in vs if v not in VARIABLES]
+    if bad:
+        raise SystemExit(f"unknown EVAL_VARS {bad}; choose from {list(VARIABLES)}")
+    print(f"[vars] {len(vs)} variable(s): {vs}")
+    return vs
+
+
+def native_truth_nc(var: str) -> Path:
+    """Per-variable all-native-levels model-grid truth cache path.
+
+    temperature -> truth_modelgrid_T_<run>.nc (matches the pre-existing T cache,
+    so it is reused rather than rebuilt).
+    """
+    return OUTDIR / f"truth_modelgrid_{VARIABLES[var]['short']}_{RUN}.nc"
 
 
 # --------------------------------------------------------------------------- #
@@ -208,56 +259,78 @@ def _build_regridder(sample: xr.DataArray):
         src, model.data_coords.horizontal, skipna=True)
 
 
+def _truth_rename(vars: list[str]) -> dict:
+    """Source->canonical rename. NextGEMS uses short var names + lat/lon; the
+    staged ERA5 files already use the canonical NeuralGCM names."""
+    if CFG["truth_kind"] != "nextgems":
+        return {}
+    m = {VARIABLES[v]["nextgems_src"]: v for v in vars}
+    m.update({"lat": "latitude", "lon": "longitude"})
+    return m
+
+
 def _open_truth_source() -> xr.Dataset:
     """Open the run's reference dataset (NextGEMS file OR staged ERA5 months)."""
     if CFG["truth_kind"] == "nextgems":
-        ds = xr.open_dataset(CFG["truth_src"], chunks={"time": TRUTH_BATCH})
-    else:  # era5: the staged monthly files
-        files = sorted(Path(CFG["truth_src"]).glob("era5_6hourly_*.nc"))
-        if not files:
-            raise SystemExit(f"no staged ERA5 files in {CFG['truth_src']}")
-        ds = xr.open_mfdataset(files, combine="by_coords", chunks={"time": TRUTH_BATCH})
-    if CFG["truth_rename"]:
-        ds = ds.rename(CFG["truth_rename"])
-    return ds
+        return xr.open_dataset(CFG["truth_src"], chunks={"time": TRUTH_BATCH})
+    files = sorted(Path(CFG["truth_src"]).glob("era5_6hourly_*.nc"))
+    if not files:
+        raise SystemExit(f"no staged ERA5 files in {CFG['truth_src']}")
+    return xr.open_mfdataset(files, combine="by_coords", chunks={"time": TRUTH_BATCH})
 
 
-def ensure_native_truth() -> None:
-    """Build the all-native-levels model-grid reference-T cache (once). Heavy I/O."""
-    if NATIVE_TRUTH_NC.exists():
-        print(f"[truth] cache present: {NATIVE_TRUTH_NC}")
+def ensure_native_truth(vars: list[str] | None = None) -> None:
+    """Build the all-native-levels model-grid truth cache(s). Heavy I/O.
+
+    Builds ONE cache file per variable, but does so in a SINGLE pass over the
+    (large) source: open once, regrid every still-missing variable per time
+    slab. Call this once (with the full variable set) before the plot scripts;
+    ``truth_at_levels`` then just opens the caches. The 3D prognostic fields are
+    clean (no NaN, physical ranges), so a plain conservative regrid is used --
+    only the surface sst/ci forcing needs masking, and that is not plotted here.
+    """
+    vars = vars or selected_variables()
+    missing = [v for v in vars if not native_truth_nc(v).exists()]
+    present = [v for v in vars if v not in missing]
+    if present:
+        print(f"[truth] caches present: {present}")
+    if not missing:
         return
-    print(f"[truth] building {NATIVE_TRUTH_NC} ({REF_LABEL}, model grid) ...")
+    print(f"[truth] building {missing} ({REF_LABEL}, model grid, single pass) ...")
     ds = _open_truth_source()
-    t = ds["temperature"]                       # (time, level, lat, lon)
-    regridder = _build_regridder(t.isel(time=0))
-    n = t.sizes["time"]
-    slabs = []
+    rename = _truth_rename(missing)
+    if rename:
+        ds = ds.rename(rename)
+    regridder = _build_regridder(ds[missing[0]].isel(time=0))
+    n = ds.sizes["time"]
+    slabs = {v: [] for v in missing}
     for s in range(0, n, TRUTH_BATCH):
-        sub = t.isel(time=slice(s, s + TRUTH_BATCH)).compute()   # T has no NaN
-        slabs.append(xarray_utils.regrid(sub, regridder))
+        sub = ds[missing].isel(time=slice(s, s + TRUTH_BATCH)).compute()
+        for v in missing:
+            slabs[v].append(xarray_utils.regrid(sub[v], regridder))
         print(f"  {min(s + TRUTH_BATCH, n)}/{n}", flush=True)
-    truth = xr.concat(slabs, dim="time")
-    truth.name = "temperature"
-    enc = {"temperature": {"dtype": "float32", "zlib": True, "complevel": 4}}
-    truth.to_netcdf(NATIVE_TRUTH_NC, encoding=enc)
-    print(f"[truth] wrote {NATIVE_TRUTH_NC} {dict(truth.sizes)}")
+    for v in missing:
+        truth = xr.concat(slabs[v], dim="time")
+        truth.name = v
+        enc = {v: {"dtype": "float32", "zlib": True, "complevel": 4}}
+        truth.to_netcdf(native_truth_nc(v), encoding=enc)
+        print(f"[truth] wrote {native_truth_nc(v)} {dict(truth.sizes)}")
 
 
 _TRUTH_AT = {}
 
 
-def truth_at_levels(levels: list[int]) -> xr.DataArray:
-    """Reference T on the model grid, linearly vinterp'd to ``levels`` (cached).
+def truth_at_levels(var: str, levels: list[int]) -> xr.DataArray:
+    """Reference ``var`` on the model grid, linearly vinterp'd to ``levels``.
 
     For ERA5 the native levels already include the requested ones, so the linear
     interpolation is effectively a select; for NextGEMS it interpolates 25->levels.
     """
-    key = tuple(levels)
+    key = (var, tuple(levels))
     if key in _TRUTH_AT:
         return _TRUTH_AT[key]
-    ensure_native_truth()
-    native = xr.open_dataarray(NATIVE_TRUTH_NC)
+    ensure_native_truth([var])
+    native = xr.open_dataarray(native_truth_nc(var))
     out = native.interp(level=list(levels), method="linear",
                         kwargs={"fill_value": "extrapolate"}).load()
     native.close()
