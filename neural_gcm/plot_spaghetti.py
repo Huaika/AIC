@@ -97,38 +97,46 @@ def spaghetti(ax, roll_lev, ref_daily_lev, level, color, label, units, region, e
     ax.legend(loc="upper left", framealpha=0.9)
 
 
-def plot_variable(var, levels, regions):
+def plot_variable(var, levels, regions, periods):
     meta = C.VARIABLES[var]
     short, units, label = meta["short"], meta["units"], meta["label"]
     print(f"=== spaghetti: {var} ({short}) ===")
     roll = build_rollout_gmean(var, short, levels, regions)
     ref = build_ref(var, levels, regions)
+    roll["_m"] = roll["init_date"].dt.month
+    ref["_m"] = pd.to_datetime(ref["date"]).dt.month
 
     cmap = plt.get_cmap("turbo")
-    for reg in regions:
-        figdir = C.figure_dir(reg, var, "spaghetti")
-        roll_r = roll[roll["region"] == reg]
-        ref_r = ref[ref["region"] == reg]
-        for k, lev in enumerate(levels):
-            color = cmap(k / max(1, len(levels) - 1))
-            roll_lev = roll_r[roll_r["level"] == lev]
-            ref_lev = ref_r[ref_r["level"] == lev].sort_values("date")
-
-            fig, ax = plt.subplots(figsize=(13, 5))
-            spaghetti(ax, roll_lev, ref_lev, lev, color, label, units, reg, every=1)
-            ax.set_xlabel("Valid time")
-            fig.tight_layout()
-            out = figdir / f"{C.RUN}_spaghetti_L{lev:04d}.png"
-            fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
-        print(f"  saved {reg}/{var} ({len(levels)} levels)")
+    for period in periods:
+        roll_p = roll if period == 0 else roll[roll["_m"] == period]
+        ref_p = ref if period == 0 else ref[ref["_m"] == period]
+        if roll_p.empty:
+            print(f"  [skip] no init-days in {C.period_dir_name(period)}")
+            continue
+        for reg in regions:
+            figdir = C.figure_dir(period, reg, var, "spaghetti")
+            roll_r = roll_p[roll_p["region"] == reg]
+            ref_r = ref_p[ref_p["region"] == reg]
+            for k, lev in enumerate(levels):
+                color = cmap(k / max(1, len(levels) - 1))
+                roll_lev = roll_r[roll_r["level"] == lev]
+                ref_lev = ref_r[ref_r["level"] == lev].sort_values("date")
+                fig, ax = plt.subplots(figsize=(13, 5))
+                spaghetti(ax, roll_lev, ref_lev, lev, color, label, units, reg, every=1)
+                ax.set_xlabel("Valid time")
+                fig.tight_layout()
+                out = figdir / f"{C.RUN}_spaghetti_L{lev:04d}.png"
+                fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+        print(f"  saved {C.period_dir_name(period)} x {len(regions)} region(s)")
 
 
 def main():
     levels = C.requested_levels()
     regions = C.selected_regions()
+    periods = C.selected_periods()
     for var in C.selected_variables():
-        plot_variable(var, levels, regions)
-    print(f"done -> {C.FIGROOT}/<region>/<variable>/spaghetti/")
+        plot_variable(var, levels, regions, periods)
+    print(f"done -> {C.FIGROOT}/<period>/<region>/<variable>/spaghetti/")
 
 
 if __name__ == "__main__":

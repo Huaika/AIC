@@ -25,6 +25,7 @@ export MPLBACKEND=Agg
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-8}
 export NG_LEVEL_INTERVAL="${NG_LEVEL_INTERVAL:-50}"
 export EVAL_REGIONS="${EVAL_REGIONS:-}"   # empty -> world only; "all" -> world+continents
+export EVAL_MONTHS="${EVAL_MONTHS:-}"     # empty -> 00_entire_year; e.g. "5,6,7"; "all" -> year+months
 export EVAL_REQUIRE_CACHE=1
 : "${EVAL_RUN:?export EVAL_RUN before submitting}"
 

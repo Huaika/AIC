@@ -195,6 +195,46 @@ def region_extent(region: str):
     return w, e, s, n
 
 
+# --------------------------------------------------------------------------- #
+# Time periods -- restrict the diagnostics to a month (by rollout INIT date) or
+# the whole year. period 0 = entire year (default, folder 00_entire_year); month
+# m in 1..12 -> folder 0m_<name>. Select with EVAL_MONTHS (comma/space list of
+# month numbers; "all" = entire year + every month). Output gains a period folder
+# directly under the run: figures/<run>/<period>/<region>/<variable>/<family>/.
+# --------------------------------------------------------------------------- #
+MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july",
+               "august", "september", "october", "november", "december"]
+
+
+def period_dir_name(period: int) -> str:
+    """0 -> '00_entire_year'; 1..12 -> '01_january' .. '12_december'."""
+    if period == 0:
+        return "00_entire_year"
+    return f"{period:02d}_{MONTH_NAMES[period - 1]}"
+
+
+def selected_periods() -> list[int]:
+    """EVAL_MONTHS: comma/space list of 0..12 (0 = entire year), or 'all'
+    (= entire year + every month). Unset -> [0] (entire year only)."""
+    env = os.environ.get("EVAL_MONTHS", "").strip()
+    if not env:
+        ps = [0]
+    elif env.lower() == "all":
+        ps = list(range(0, 13))
+    else:
+        ps = [int(x) for x in env.replace(",", " ").split()]
+    bad = [p for p in ps if not 0 <= p <= 12]
+    if bad:
+        raise SystemExit(f"EVAL_MONTHS entries must be 0..12 (0=entire year); bad {bad}")
+    print(f"[periods] {len(ps)}: {[period_dir_name(p) for p in ps]}")
+    return ps
+
+
+def pred_init_month(path) -> int:
+    """Month 1..12 parsed from a pred_<year>_<YYYY-MM-DD>.nc filename."""
+    return int(Path(path).stem.split("_")[-1].split("-")[1])
+
+
 def native_truth_nc(var: str) -> Path:
     """Per-variable all-native-levels model-grid truth cache path.
 
@@ -226,11 +266,13 @@ def to_world(da: xr.DataArray) -> xr.DataArray:
     return da.sortby("longitude").sortby("latitude")
 
 
-def figure_dir(region: str, variable: str, kind: str) -> Path:
-    """figures/<run>/<region>/<full-variable-name>/<kind>/  (kind = spaghetti|
-    drift_stats|drift_maps), e.g. figures/era5_1955/europe/temperature/drift_maps/.
-    Region is the top folder; the variable short tag is NOT in the filename."""
-    d = FIGROOT / region / variable / kind
+def figure_dir(period: int, region: str, variable: str, kind: str) -> Path:
+    """figures/<run>/<period>/<region>/<full-variable-name>/<kind>/  (kind =
+    spaghetti|drift_stats|drift_maps), e.g.
+    figures/era5_2023/05_may/europe/temperature/drift_maps/. Period (00_entire_year
+    or 0m_<month>) is the top folder under the run; the variable short tag is NOT
+    in the filename."""
+    d = FIGROOT / period_dir_name(period) / region / variable / kind
     d.mkdir(parents=True, exist_ok=True)
     return d
 

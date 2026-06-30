@@ -62,55 +62,64 @@ def build_drift(var, short, levels, truth, regions) -> pd.DataFrame:
     return df
 
 
-def aggregate(df, short) -> pd.DataFrame:
+def aggregate(df, short, period) -> pd.DataFrame:
     agg = (df.groupby(["region", "level", "lead_hours"], as_index=False)
              .agg(mse=("mse", "mean"), bias=("bias", "mean"),
                   n_init=("init_date", "nunique")))
     agg["rmse"] = np.sqrt(agg["mse"])
     agg["lead_day"] = agg["lead_hours"] / 24.0
-    agg.to_csv(C.OUTDIR / f"{C.RUN}_drift_yearmean_{short}_{C.level_tag()}.csv",
+    suffix = "" if period == 0 else f"_{period:02d}"
+    agg.to_csv(C.OUTDIR / f"{C.RUN}_drift_yearmean_{short}{suffix}_{C.level_tag()}.csv",
                index=False)
     return agg
 
 
-def plot_variable(var, levels, regions):
+def plot_variable(var, levels, regions, periods):
     meta = C.VARIABLES[var]
     short, units, label = meta["short"], meta["units"], meta["label"]
     print(f"=== drift stats: {var} ({short}) ===")
     truth = C.truth_at_levels(var, levels)
-    agg = aggregate(build_drift(var, short, levels, truth, regions), short)
+    df = build_drift(var, short, levels, truth, regions)
+    df["_m"] = df["init_date"].dt.month
 
-    for reg in regions:
-        figdir = C.figure_dir(reg, var, "drift_stats")
-        area = "global" if reg == "world" else reg
-        ar = agg[agg["region"] == reg]
-        for lev in levels:
-            a = ar[ar["level"] == lev].sort_values("lead_hours")
-            fig, ax_rmse = plt.subplots(figsize=(6.5, 4.4))
-            ax_bias = ax_rmse.twinx()
-            ax_rmse.plot(a["lead_day"], a["rmse"], color="#1f77b4", label="RMSE")
-            ax_bias.plot(a["lead_day"], a["bias"], color="#d62728", label="bias")
-            ax_bias.axhline(0.0, color="#d62728", lw=0.8, ls=":", alpha=0.6)
-            ax_rmse.set_title(f"{C.REF_LABEL} — {lev} hPa {label} ({area}, "
-                              f"mean of {int(a['n_init'].iloc[0])} daily inits)")
-            ax_rmse.set_xlabel("lead time (days)")
-            ax_rmse.set_ylabel(f"RMSE [{units}]", color="#1f77b4")
-            ax_bias.set_ylabel(f"mean bias [{units}]", color="#d62728")
-            ax_rmse.tick_params(axis="y", labelcolor="#1f77b4")
-            ax_bias.tick_params(axis="y", labelcolor="#d62728")
-            ax_rmse.grid(True, alpha=0.3)
-            fig.tight_layout()
-            out = figdir / f"{C.RUN}_drift_rmse_bias_L{lev:04d}.png"
-            fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
-        print(f"  saved {reg}/{var} ({len(levels)} levels)")
+    for period in periods:
+        sub = df if period == 0 else df[df["_m"] == period]
+        if sub.empty:
+            print(f"  [skip] no init-days in {C.period_dir_name(period)}")
+            continue
+        agg = aggregate(sub, short, period)
+        for reg in regions:
+            figdir = C.figure_dir(period, reg, var, "drift_stats")
+            area = "global" if reg == "world" else reg
+            ar = agg[agg["region"] == reg]
+            for lev in levels:
+                a = ar[ar["level"] == lev].sort_values("lead_hours")
+                fig, ax_rmse = plt.subplots(figsize=(6.5, 4.4))
+                ax_bias = ax_rmse.twinx()
+                ax_rmse.plot(a["lead_day"], a["rmse"], color="#1f77b4", label="RMSE")
+                ax_bias.plot(a["lead_day"], a["bias"], color="#d62728", label="bias")
+                ax_bias.axhline(0.0, color="#d62728", lw=0.8, ls=":", alpha=0.6)
+                ax_rmse.set_title(f"{C.REF_LABEL} — {lev} hPa {label} ({area}, "
+                                  f"mean of {int(a['n_init'].iloc[0])} daily inits)")
+                ax_rmse.set_xlabel("lead time (days)")
+                ax_rmse.set_ylabel(f"RMSE [{units}]", color="#1f77b4")
+                ax_bias.set_ylabel(f"mean bias [{units}]", color="#d62728")
+                ax_rmse.tick_params(axis="y", labelcolor="#1f77b4")
+                ax_bias.tick_params(axis="y", labelcolor="#d62728")
+                ax_rmse.grid(True, alpha=0.3)
+                fig.tight_layout()
+                out = figdir / f"{C.RUN}_drift_rmse_bias_L{lev:04d}.png"
+                fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+        print(f"  saved {C.period_dir_name(period)} x {len(regions)} region(s)")
 
 
 def main():
     levels = C.requested_levels()
     regions = C.selected_regions()
+    periods = C.selected_periods()
     for var in C.selected_variables():
-        plot_variable(var, levels, regions)
-    print(f"done -> {C.FIGROOT}/<region>/<variable>/drift_stats/")
+        plot_variable(var, levels, regions, periods)
+    print(f"done -> {C.FIGROOT}/<period>/<region>/<variable>/drift_stats/")
 
 
 if __name__ == "__main__":
