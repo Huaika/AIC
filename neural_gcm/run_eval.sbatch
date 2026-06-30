@@ -25,11 +25,11 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64gb
 #SBATCH --time=12:00:00
-#SBATCH --output=/pfs/work9/workspace/scratch/ka_hc5935-ai-climate/eval_logs/eval_%A_%a.log
-#SBATCH --error=/pfs/work9/workspace/scratch/ka_hc5935-ai-climate/eval_logs/eval_%A_%a.log
+#SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs/eval_%A_%a.log
+#SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs/eval_%A_%a.log
 set -euo pipefail
 cd "$SLURM_SUBMIT_DIR"
-mkdir -p /pfs/work9/workspace/scratch/ka_hc5935-ai-climate/eval_logs
+mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs
 
 PY="$(pwd)/.venv/bin/python"
 export JAX_PLATFORMS=cpu

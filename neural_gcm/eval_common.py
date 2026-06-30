@@ -144,6 +144,15 @@ def native_truth_nc(var: str) -> Path:
     return OUTDIR / f"truth_modelgrid_{VARIABLES[var]['short']}_{RUN}.nc"
 
 
+# Per-run directory holding the per-time-chunk partial truth files produced by
+# the chunked (30-min-job) build; finalize_truth() concatenates them.
+PARTS_DIR = OUTDIR / "truth_parts" / RUN
+
+
+def _part_path(var: str, t0: int, t1: int) -> Path:
+    return PARTS_DIR / f"{VARIABLES[var]['short']}_{t0:05d}_{t1:05d}.nc"
+
+
 # --------------------------------------------------------------------------- #
 # small helpers (unchanged, run-independent)
 # --------------------------------------------------------------------------- #
@@ -329,6 +338,11 @@ def truth_at_levels(var: str, levels: list[int]) -> xr.DataArray:
     key = (var, tuple(levels))
     if key in _TRUTH_AT:
         return _TRUTH_AT[key]
+    if not native_truth_nc(var).exists() and os.environ.get("EVAL_REQUIRE_CACHE"):
+        raise SystemExit(
+            f"[truth] cache missing for {var} ({native_truth_nc(var)}) and "
+            f"EVAL_REQUIRE_CACHE is set -- build it first via the truth-chunk + "
+            f"finalize jobs. Refusing to build a multi-hour cache inside this job.")
     ensure_native_truth([var])
     native = xr.open_dataarray(native_truth_nc(var))
     out = native.interp(level=list(levels), method="linear",
@@ -338,3 +352,100 @@ def truth_at_levels(var: str, levels: list[int]) -> xr.DataArray:
     out = out.reindex(latitude=clat, longitude=clon, method="nearest", tolerance=1e-6)
     _TRUTH_AT[key] = out
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Chunked, resumable truth build -- so the (otherwise multi-hour) NextGEMS/ERA5
+# truth caches fit inside the 30-min dev_cpu lane. build_truth_chunk() regrids
+# one time-slice of every still-missing variable and writes a per-chunk part
+# file; finalize_truth() concatenates the parts into the final cache once they
+# are all present. Both are resumable: existing parts/caches are skipped.
+# --------------------------------------------------------------------------- #
+def truth_source_nsteps() -> int:
+    ds = _open_truth_source()
+    n = int(ds.sizes["time"])
+    ds.close()
+    return n
+
+
+def build_truth_chunk(t0: int, t1: int, vars: list[str] | None = None) -> None:
+    """Regrid timesteps [t0, t1) of every missing variable -> per-chunk parts.
+
+    A variable is skipped if its final cache OR this chunk's part already exists.
+    Reads the source in TRUTH_BATCH sub-slabs to bound memory; writes each part
+    atomically (.tmp -> rename)."""
+    vars = vars or selected_variables()
+    want = [v for v in vars
+            if not native_truth_nc(v).exists() and not _part_path(v, t0, t1).exists()]
+    if not want:
+        print(f"[chunk {t0}:{t1}] nothing to do (caches/parts present)")
+        return
+    ds = _open_truth_source()
+    n = int(ds.sizes["time"])
+    if t0 >= n:
+        print(f"[chunk {t0}:{t1}] beyond data (n={n}); no-op")
+        ds.close()
+        return
+    t1 = min(t1, n)
+    rename = _truth_rename(want)
+    if rename:
+        ds = ds.rename(rename)
+    print(f"[chunk {t0}:{t1}] building {want} ({REF_LABEL}); n={n}", flush=True)
+    regridder = _build_regridder(ds[want[0]].isel(time=0))
+    slabs = {v: [] for v in want}
+    for s in range(t0, t1, TRUTH_BATCH):
+        e = min(s + TRUTH_BATCH, t1)
+        sub = ds[want].isel(time=slice(s, e)).compute()
+        for v in want:
+            slabs[v].append(xarray_utils.regrid(sub[v], regridder))
+        print(f"  {e - t0}/{t1 - t0} (abs {e}/{n})", flush=True)
+    PARTS_DIR.mkdir(parents=True, exist_ok=True)
+    for v in want:
+        part = xr.concat(slabs[v], dim="time")
+        part.name = v
+        enc = {v: {"dtype": "float32", "zlib": True, "complevel": 4}}
+        p = _part_path(v, t0, t1)
+        tmp = p.with_suffix(".tmp.nc")
+        part.to_netcdf(tmp, encoding=enc)
+        tmp.rename(p)
+        print(f"[chunk] wrote {p} {dict(part.sizes)}", flush=True)
+
+
+def finalize_truth(vars: list[str] | None = None) -> None:
+    """Concatenate per-chunk parts into the final per-variable cache.
+
+    Only finalizes a variable whose parts together cover ALL timesteps (so an
+    incomplete build is left for a re-run rather than producing a short cache).
+    Deletes the parts after a successful write."""
+    vars = vars or selected_variables()
+    n = None
+    for v in vars:
+        fc = native_truth_nc(v)
+        if fc.exists():
+            print(f"[final] {v}: cache present")
+            continue
+        parts = sorted(PARTS_DIR.glob(f"{VARIABLES[v]['short']}_*.nc"))
+        if not parts:
+            print(f"[final] {v}: no parts found in {PARTS_DIR}")
+            continue
+        das = [xr.open_dataarray(p) for p in parts]
+        full = xr.concat(das, dim="time").sortby("time")
+        full = full.drop_duplicates("time")
+        if n is None:
+            n = truth_source_nsteps()
+        if int(full.sizes["time"]) != n:
+            print(f"[final] {v}: INCOMPLETE {int(full.sizes['time'])}/{n} steps "
+                  f"({len(parts)} parts) -- skip, re-run chunks")
+            for d in das:
+                d.close()
+            continue
+        full.name = v
+        enc = {v: {"dtype": "float32", "zlib": True, "complevel": 4}}
+        tmp = fc.with_suffix(".tmp.nc")
+        full.to_netcdf(tmp, encoding=enc)
+        tmp.rename(fc)
+        for d in das:
+            d.close()
+        for p in parts:
+            p.unlink()
+        print(f"[final] wrote {fc} {dict(full.sizes)} (from {len(parts)} parts, removed)")
