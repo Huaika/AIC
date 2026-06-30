@@ -35,10 +35,10 @@ neural_gcm/results_daily/.done_*
 neural_gcm/results_daily/orchestrator.log
 
 # Generated eval/rollout outputs (figures + CSV/log; .nc already ignored above)
-neural_gcm/figures/
+# neural_gcm/figures/
 neural_gcm/results_eval_*/
 neural_gcm/results_daily_nextgems/
-neural_gcm/results/
+# neural_gcm/results/
 
 # Editor / workspace junk
 .idea/
