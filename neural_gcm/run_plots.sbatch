@@ -24,6 +24,7 @@ export JAX_PLATFORMS=cpu
 export MPLBACKEND=Agg
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-8}
 export NG_LEVEL_INTERVAL="${NG_LEVEL_INTERVAL:-50}"
+export EVAL_REGIONS="${EVAL_REGIONS:-}"   # empty -> world only; "all" -> world+continents
 export EVAL_REQUIRE_CACHE=1
 : "${EVAL_RUN:?export EVAL_RUN before submitting}"
 
@@ -32,7 +33,7 @@ VARLIST=(temperature geopotential specific_humidity u_component_of_wind v_compon
 export EVAL_VARS="${VARLIST[$SLURM_ARRAY_TASK_ID]}"
 
 echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} run=${EVAL_RUN} "\
-"var=${EVAL_VARS} levels=${NG_LEVELS:-<interval ${NG_LEVEL_INTERVAL}>}"
+"var=${EVAL_VARS} regions=${EVAL_REGIONS:-<world>} levels=${NG_LEVELS:-<interval ${NG_LEVEL_INTERVAL}>}"
 
 "$PY" plot_spaghetti.py
 "$PY" plot_drift.py

@@ -135,6 +135,66 @@ def selected_variables() -> list[str]:
     return vs
 
 
+# --------------------------------------------------------------------------- #
+# Regions -- restrict the area the diagnostics cover to a lat/lon box. Each
+# region is (lat_south, lat_north, lon_west, lon_east) in the -180..180 lon
+# convention. "world" is the whole globe (the default). The continent boxes are
+# approximate bounding boxes (they overlap, e.g. europe/asia -- that's fine).
+# Select with EVAL_REGIONS (comma/space list); plots are written under
+# figures/<run>/<region>/<variable>/<family>/.
+# --------------------------------------------------------------------------- #
+REGIONS = {
+    "world":         (-90.0,  90.0, -180.0, 180.0),
+    "africa":        (-37.0,  38.0,  -20.0,  55.0),
+    "europe":        ( 34.0,  72.0,  -25.0,  45.0),
+    "asia":          (  5.0,  78.0,   25.0, 180.0),
+    "north_america": (  7.0,  84.0, -170.0, -52.0),
+    "south_america": (-57.0,  14.0,  -82.0, -34.0),
+    "oceania":       (-50.0,   0.0,  110.0, 180.0),
+    "antarctica":    (-90.0, -60.0, -180.0, 180.0),
+}
+DEFAULT_REGIONS = ["world"]
+CONTINENTS = [r for r in REGIONS if r != "world"]
+
+
+def selected_regions() -> list[str]:
+    """EVAL_REGIONS (comma/space list) or, if unset, ['world']. Pass
+    EVAL_REGIONS=all for world + every continent."""
+    env = os.environ.get("EVAL_REGIONS", "").strip()
+    if not env:
+        rs = list(DEFAULT_REGIONS)
+    elif env.lower() == "all":
+        rs = list(REGIONS)
+    else:
+        rs = [r.strip() for r in env.replace(",", " ").split()]
+    bad = [r for r in rs if r not in REGIONS]
+    if bad:
+        raise SystemExit(f"unknown EVAL_REGIONS {bad}; choose from {list(REGIONS)} (or 'all')")
+    print(f"[regions] {len(rs)} region(s): {rs}")
+    return rs
+
+
+def select_region(da: xr.DataArray, region: str) -> xr.DataArray:
+    """Crop ``da`` to the region's lat/lon box (no-op footprint for 'world').
+
+    Normalizes longitude to -180..180 first; handles a box that wraps the
+    antimeridian (lon_west > lon_east)."""
+    s, n, w, e = REGIONS[region]
+    da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180))
+    da = da.sortby("longitude").sortby("latitude")
+    if w <= e:
+        da = da.sel(longitude=slice(w, e))
+    else:  # box crosses the antimeridian (e.g. 150 .. -150)
+        da = da.sel(longitude=(da.longitude >= w) | (da.longitude <= e))
+    return da.sel(latitude=slice(s, n))
+
+
+def region_extent(region: str):
+    """(lon_west, lon_east, lat_south, lat_north) for map axis limits."""
+    s, n, w, e = REGIONS[region]
+    return w, e, s, n
+
+
 def native_truth_nc(var: str) -> Path:
     """Per-variable all-native-levels model-grid truth cache path.
 
@@ -166,11 +226,11 @@ def to_world(da: xr.DataArray) -> xr.DataArray:
     return da.sortby("longitude").sortby("latitude")
 
 
-def figure_dir(variable: str, kind: str) -> Path:
-    """figures/<run>/<full-variable-name>/<kind>/  (kind = spaghetti|drift_stats|
-    drift_maps). The variable is its own folder -- the short tag is NOT in the
-    filename anymore -- so one variable's diagnostics live together."""
-    d = FIGROOT / variable / kind
+def figure_dir(region: str, variable: str, kind: str) -> Path:
+    """figures/<run>/<region>/<full-variable-name>/<kind>/  (kind = spaghetti|
+    drift_stats|drift_maps), e.g. figures/era5_1955/europe/temperature/drift_maps/.
+    Region is the top folder; the variable short tag is NOT in the filename."""
+    d = FIGROOT / region / variable / kind
     d.mkdir(parents=True, exist_ok=True)
     return d
 
