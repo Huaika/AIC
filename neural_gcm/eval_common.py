@@ -166,8 +166,11 @@ def to_world(da: xr.DataArray) -> xr.DataArray:
     return da.sortby("longitude").sortby("latitude")
 
 
-def figure_dir(kind: str) -> Path:
-    d = FIGROOT / kind
+def figure_dir(variable: str, kind: str) -> Path:
+    """figures/<run>/<full-variable-name>/<kind>/  (kind = spaghetti|drift_stats|
+    drift_maps). The variable is its own folder -- the short tag is NOT in the
+    filename anymore -- so one variable's diagnostics live together."""
+    d = FIGROOT / variable / kind
     d.mkdir(parents=True, exist_ok=True)
     return d
 

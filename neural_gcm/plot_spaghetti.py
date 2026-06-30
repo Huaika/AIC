@@ -17,7 +17,6 @@ import matplotlib.dates as mdates
 import eval_common as C
 
 YEAR = C.YEAR
-FIGDIR = C.figure_dir("spaghetti")
 
 
 def build_rollout_gmean(var, short, levels) -> pd.DataFrame:
@@ -78,6 +77,7 @@ def plot_variable(var, levels):
     meta = C.VARIABLES[var]
     short, units, label = meta["short"], meta["units"], meta["label"]
     print(f"=== spaghetti: {var} ({short}) ===")
+    figdir = C.figure_dir(var, "spaghetti")
     roll = build_rollout_gmean(var, short, levels)
 
     truth = C.truth_at_levels(var, levels)
@@ -96,16 +96,16 @@ def plot_variable(var, levels):
         spaghetti(ax, roll_lev, ref_lev, lev, color, label, units, every=1)
         ax.set_xlabel("Valid time")
         fig.tight_layout()
-        out = FIGDIR / f"{C.RUN}_spaghetti_{short}_L{lev:04d}.png"
+        out = figdir / f"{C.RUN}_spaghetti_L{lev:04d}.png"
         fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
-        print(f"saved spaghetti {short} L{lev}")
+        print(f"saved spaghetti {var} L{lev}")
 
 
 def main():
     levels = C.requested_levels()
     for var in C.selected_variables():
         plot_variable(var, levels)
-    print(f"done -> {FIGDIR}/")
+    print(f"done -> {C.FIGROOT}/<variable>/spaghetti/")
 
 
 if __name__ == "__main__":

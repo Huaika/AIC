@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 import eval_common as C
 
 YEAR = C.YEAR
-FIGDIR = C.figure_dir("drift_stats")
 
 
 def build_drift(var, short, levels, truth) -> pd.DataFrame:
@@ -70,6 +69,7 @@ def plot_variable(var, levels):
     meta = C.VARIABLES[var]
     short, units, label = meta["short"], meta["units"], meta["label"]
     print(f"=== drift stats: {var} ({short}) ===")
+    figdir = C.figure_dir(var, "drift_stats")
     truth = C.truth_at_levels(var, levels)
     agg = aggregate(build_drift(var, short, levels, truth), short)
 
@@ -89,7 +89,7 @@ def plot_variable(var, levels):
         ax_bias.tick_params(axis="y", labelcolor="#d62728")
         ax_rmse.grid(True, alpha=0.3)
         fig.tight_layout()
-        out = FIGDIR / f"{C.RUN}_drift_rmse_bias_{short}_L{lev:04d}.png"
+        out = figdir / f"{C.RUN}_drift_rmse_bias_L{lev:04d}.png"
         fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
         print(f"{short} L{lev}: day-10 RMSE={a['rmse'].iloc[-1]:.4g} {units} "
               f"bias={a['bias'].iloc[-1]:+.4g} {units}")
@@ -99,7 +99,7 @@ def main():
     levels = C.requested_levels()
     for var in C.selected_variables():
         plot_variable(var, levels)
-    print(f"done -> {FIGDIR}/")
+    print(f"done -> {C.FIGROOT}/<variable>/drift_stats/")
 
 
 if __name__ == "__main__":

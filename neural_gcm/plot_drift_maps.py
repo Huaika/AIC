@@ -19,7 +19,6 @@ import eval_common as C
 
 YEAR = C.YEAR
 FINAL_DAY_LEAD_MIN = 216
-FIGDIR = C.figure_dir("drift_maps")
 
 
 def build_fields(var, short, levels, truth) -> xr.Dataset:
@@ -59,6 +58,7 @@ def plot_variable(var, levels):
     short, units, label, fcmap = (meta["short"], meta["units"],
                                   meta["label"], meta["cmap"])
     print(f"=== drift maps: {var} ({short}) ===")
+    figdir = C.figure_dir(var, "drift_maps")
     truth = C.truth_at_levels(var, levels)
     out = build_fields(var, short, levels, truth)
 
@@ -91,9 +91,9 @@ def plot_variable(var, levels):
         fig.suptitle(f"{C.REF_LABEL} — mean 10-day {label}@{lev} hPa drift "
                      f"(Rackow et al. 2024, Fig. 3 style)", y=1.04, fontsize=13)
         fig.tight_layout()
-        out_png = FIGDIR / f"{C.RUN}_driftmap_{short}_L{lev:04d}.png"
+        out_png = figdir / f"{C.RUN}_driftmap_L{lev:04d}.png"
         fig.savefig(out_png, dpi=150, bbox_inches="tight"); plt.close(fig)
-        print(f"{short} L{lev}: drift global mean {gm:+.4g} {units}, "
+        print(f"{var} L{lev}: drift global mean {gm:+.4g} {units}, "
               f"range {float(dr.min()):+.4g}..{float(dr.max()):+.4g} {units}")
 
 
@@ -101,7 +101,7 @@ def main():
     levels = C.requested_levels()
     for var in C.selected_variables():
         plot_variable(var, levels)
-    print(f"done -> {FIGDIR}/")
+    print(f"done -> {C.FIGROOT}/<variable>/drift_maps/")
 
 
 if __name__ == "__main__":
