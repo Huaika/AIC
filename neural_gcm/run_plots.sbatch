@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=ngcm_plot
-# STAGE 3: plotting, one 30-min dev_cpu job per VARIABLE (array index = variable).
+# STAGE 3: plotting, one short cpu-partition job per VARIABLE (array index = variable).
 # Each task runs all 3 plot families (spaghetti / drift-stat / drift-map) for its
 # single variable, sweeping every requested level. Truth caches must already
 # exist (EVAL_REQUIRE_CACHE=1 makes a job fail fast rather than attempt a
 # multi-hour build). Per-(var) prediction scans are cached to CSV/nc, so a re-run
 # only re-renders. ~14 min/variable observed -> fits 30 min.
 #   EVAL_RUN exported by the submitter; typically afterok on the finalize job.
-#SBATCH --partition=dev_cpu,dev_cpu_il
+#SBATCH --partition=cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8

@@ -5,7 +5,7 @@
 # model-grid arrays). Only finalizes variables whose parts cover ALL timesteps.
 #   EVAL_RUN exported by the submitter; typically run with afterok on the
 #   matching truth-chunk array.
-#SBATCH --partition=dev_cpu,dev_cpu_il
+#SBATCH --partition=cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4

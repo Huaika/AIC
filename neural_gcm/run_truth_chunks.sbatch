@@ -1,14 +1,16 @@
 #!/bin/bash
 #SBATCH --job-name=truth_chunk
 # STAGE 1 of the chunked eval pipeline: build the per-variable model-grid truth
-# caches in 30-min dev_cpu jobs. Each ARRAY TASK = one time-chunk of CHUNK_STEPS
+# caches in short (<=30 min) cpu-partition jobs -- short walltime is the backfill
+# lever and the normal QOS has no concurrency cap (dev QOS is limited to 1 running
+# / 4 queued, so NOT used). Each ARRAY TASK = one time-chunk of CHUNK_STEPS
 # timesteps; it regrids every still-missing variable for that slice and writes a
 # per-chunk part file (results_eval_<run>/truth_parts/<run>/). Resumable: existing
 # parts/caches are skipped, so a re-submit only fills gaps.
 #   EVAL_RUN must be exported by the submitter (per-run chains).
 #   array index = chunk number; CHUNK_STEPS default 120 (=> <=13 chunks for 1460
 #   steps). Tasks whose t0 >= nsteps are fast no-ops (e.g. era5_2026, 696 steps).
-#SBATCH --partition=dev_cpu,dev_cpu_il
+#SBATCH --partition=cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=12
