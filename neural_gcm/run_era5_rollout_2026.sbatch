@@ -4,16 +4,17 @@
 # Each array task = a BATCH of 10 init-days (model+regridder loaded once, then a
 # loop) -> ~22-25 min, inside the 30-min short queue.
 #
-# 2026 staged through 2026-06-23 (ERA5 front). The rollout caps init-days so the
-# 10-day forecast stays within data: latest init = last_time - 10d = 2026-06-13,
-# i.e. init-days 2026-01-01 .. 2026-06-13 = 164 days -> 17 batches (idx 0..16;
-# last batch = 4). init_dates_for_year derives this cap from the staged files, so
-# the count is self-correcting -- spare batches just print "nothing to do".
-# Resumable: an init-day whose prediction .nc exists is skipped.
+# 2026 staged through 2026-06-24 (ERA5 front). ERA5_FORECAST_PAST_FRONT=1 lets
+# init-days run up to the front so the 10-day forecast reaches into July; the
+# out-of-data SST/sea-ice is held at its last real value (persistence). Init-days
+# 2026-01-01 .. 2026-06-24 = 175 -> 18 batches (idx 0..17; last batch = 5).
+# init_dates_for_year derives the cap from the staged files, so spare batches
+# just print "nothing to do". Resumable: an init-day whose .nc exists is skipped
+# (so re-running only fills the new Jun14..Jun24 inits).
 #
 # Submit AFTER staging completes (or with --dependency=afterok:<stage_jobid>):
 #   sbatch --dependency=afterok:<stage_jobid> run_era5_rollout_2026.sbatch
-#SBATCH --array=0-16
+#SBATCH --array=0-17
 #SBATCH --partition=gpu_h100_short
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
@@ -33,6 +34,7 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export XLA_PYTHON_CLIENT_ALLOCATOR=default
 
 export ERA5_YEAR=2026
+export ERA5_FORECAST_PAST_FRONT=1   # init up to the data front; persist forcing past it
 export ERA5_IN_DIR=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_2026/inputs
 export ERA5_OUT_DIR=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_2026/predictions
 # batch size overridable for smoke tests: sbatch --export=ALL,ERA5_INIT_COUNT=2 ...

@@ -71,6 +71,11 @@ OUT_H = int(os.environ.get("ERA5_OUT_H", "6"))
 SST_STRIDE_H = int(os.environ.get("ERA5_SST_STRIDE_H", "24"))
 INIT_STRIDE_DAYS = int(os.environ.get("ERA5_INIT_STRIDE_DAYS", "1"))
 SEED = int(os.environ.get("ERA5_SEED", "42"))
+# For a partial current year: allow init-days up to the ERA5 data front (instead
+# of front - ROLLOUT_DAYS) so the 10-day forecast reaches PAST the front. The
+# out-of-data SST/sea-ice forcing is then held constant at its last real value
+# (persistence). Default off -> unchanged behaviour for full-year runs.
+PAST_FRONT = os.environ.get("ERA5_FORECAST_PAST_FRONT", "0").lower() in ("1", "true", "yes")
 
 
 def load_model() -> neuralgcm.PressureLevelModel:
@@ -124,6 +129,21 @@ def run_one(model, regridder, ds, init_date: str) -> xarray.Dataset:
         .sel(time=slice(init_date, _end_str(init_date, ROLLOUT_DAYS), SST_STRIDE_H))
         .compute()
     )
+    # Persist forcing past the ERA5 data front: when the 10-day window extends
+    # beyond the last staged time, hold the last real SST/sea-ice constant by
+    # appending a copy well past the window end, so the model's time
+    # interpolation carries it flat over the out-of-data tail. Only triggers for
+    # forecasts that genuinely run past the staged data (a no-op otherwise, so
+    # fully in-data rollouts are byte-identical to before).
+    data_last = np.datetime64(ds.time.values[-1])
+    want_end = np.datetime64(_end_str(init_date, ROLLOUT_DAYS))
+    if want_end > data_last:
+        tail_t = forcing.time.values[-1] + np.timedelta64(ROLLOUT_DAYS, "D")
+        tail = forcing.isel(time=-1).assign_coords(time=tail_t).expand_dims("time")
+        forcing = xarray.concat([forcing, tail], dim="time")
+        print(f"[{init_date}] forecast runs past data front {data_last}; "
+              f"persisting last SST/sea-ice ({forcing.time.values[-2]}) over the tail",
+              flush=True)
     forcing_rg = regrid(forcing)   # ERA5 land mask is static -> single regrid ok
 
     # --- encode + unroll ---
@@ -159,7 +179,9 @@ def run_one(model, regridder, ds, init_date: str) -> xarray.Dataset:
 # --------------------------------------------------------------------------- #
 def init_dates_for_year(ds) -> list[str]:
     last = pd.Timestamp(np.datetime64(ds.time.values[-1]))
-    latest_init = last - pd.Timedelta(days=ROLLOUT_DAYS)
+    # PAST_FRONT: init up to the data front (forecast runs past it, forcing held);
+    # otherwise cap so the whole 10-day window stays inside the data.
+    latest_init = last if PAST_FRONT else last - pd.Timedelta(days=ROLLOUT_DAYS)
     dates = pd.date_range(f"{YEAR}-01-01", f"{YEAR}-12-31",
                           freq=f"{INIT_STRIDE_DAYS}D")
     return [str(d.date()) for d in dates if d <= latest_init]
