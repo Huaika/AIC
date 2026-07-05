@@ -12,9 +12,9 @@ curves; for NextGEMS-2049 the reference is NextGEMS itself (drift).
 """
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import xarray as xr
+import numpy as np
 import matplotlib.pyplot as plt
 
 import eval_common as C
@@ -22,7 +22,7 @@ import eval_common as C
 YEAR = C.YEAR
 
 
-def build_drift(var, short, levels, truth, regions) -> pd.DataFrame:
+def build_drift(var: str, short: str, levels: list[int], truth: xr.DataArray, regions: list[str]) -> pd.DataFrame:
     csv = C.OUTDIR / f"{C.RUN}_drift_per_init_{short}_{C.level_tag()}.csv"
     if csv.exists():
         df = pd.read_csv(csv, parse_dates=["init_date"])
@@ -35,25 +35,24 @@ def build_drift(var, short, levels, truth, regions) -> pd.DataFrame:
           f"({var}) at {len(levels)} levels, {len(regions)} region(s)")
     rows = []
     for i, f in enumerate(files):
-        ds = xr.open_dataset(f)
-        init = pd.to_datetime(ds.attrs.get("init_date",
-                                           f.stem.replace(f"pred_{YEAR}_", "")))
-        pred = ds[var].sel(level=levels)
-        tru = truth.sel(time=ds["valid_time"].values, method="nearest")
-        tru = tru.assign_coords(time=pred["time"].values)
-        diff = (pred - tru).compute()
-        lead_h = ds["lead_hours"].values.astype(int)
-        for reg in regions:
-            dr = C.select_region(diff, reg)
-            mse = C.lat_weighted_mean(dr ** 2)
-            bias = C.lat_weighted_mean(dr)
-            for lev in levels:
-                rows.append(pd.DataFrame({
-                    "init_date": init, "lead_hours": lead_h, "level": lev,
-                    "region": reg,
-                    "mse": np.asarray(mse.sel(level=lev).values, float),
-                    "bias": np.asarray(bias.sel(level=lev).values, float)}))
-        ds.close()
+        with xr.open_dataset(f) as ds:
+            init = pd.to_datetime(ds.attrs.get("init_date",
+                                               f.stem.replace(f"pred_{YEAR}_", "")))
+            pred = ds[var].sel(level=levels)
+            tru = truth.sel(time=ds["valid_time"].values, method="nearest")
+            tru = tru.assign_coords(time=pred["time"].values)
+            diff = (pred - tru).compute()
+            lead_h = ds["lead_hours"].values.astype(int)
+            for reg in regions:
+                dr = C.select_region(diff, reg)
+                mse = C.lat_weighted_mean(dr ** 2)
+                bias = C.lat_weighted_mean(dr)
+                for lev in levels:
+                    rows.append(pd.DataFrame({
+                        "init_date": init, "lead_hours": lead_h, "level": lev,
+                        "region": reg,
+                        "mse": np.asarray(mse.sel(level=lev).values, float),
+                        "bias": np.asarray(bias.sel(level=lev).values, float)}))
         if i % 50 == 0 or i == len(files) - 1:
             print(f"  {i + 1}/{len(files)}")
     df = pd.concat(rows, ignore_index=True)
@@ -62,7 +61,7 @@ def build_drift(var, short, levels, truth, regions) -> pd.DataFrame:
     return df
 
 
-def aggregate(df, short, period) -> pd.DataFrame:
+def aggregate(df: pd.DataFrame, short: str, period: int) -> pd.DataFrame:
     agg = (df.groupby(["region", "level", "lead_hours"], as_index=False)
              .agg(mse=("mse", "mean"), bias=("bias", "mean"),
                   n_init=("init_date", "nunique")))
@@ -74,7 +73,7 @@ def aggregate(df, short, period) -> pd.DataFrame:
     return agg
 
 
-def plot_variable(var, levels, regions, periods):
+def plot_variable(var: str, levels: list[int], regions: list[str], periods: list[int]):
     meta = C.VARIABLES[var]
     short, units, label = meta["short"], meta["units"], meta["label"]
     print(f"=== drift stats: {var} ({short}) ===")

@@ -109,7 +109,7 @@ def prediction_levels() -> list[int]:
     return _PRED_LEVELS
 
 
-def prediction_grid():
+def prediction_grid() -> tuple[np.ndarray, np.ndarray]:
     """Canonical (latitude, longitude) coordinate values of the prediction grid."""
     global _PRED_GRID
     if _PRED_GRID is None:
@@ -153,7 +153,7 @@ def requested_levels() -> list[int]:
 # --------------------------------------------------------------------------- #
 # NextGEMS truth on the model grid (native levels) + vertical interpolation
 # --------------------------------------------------------------------------- #
-def _build_regridder(sample: xr.DataArray):
+def _build_regridder(sample: xr.DataArray) -> horizontal_interpolation.ConservativeRegridder:
     gcs = gcsfs.GCSFileSystem(token="anon")
     with gcs.open(f"gs://neuralgcm/models/{MODEL_NAME}", "rb") as f:
         model = neuralgcm.PressureLevelModel.from_checkpoint(pickle.load(f))

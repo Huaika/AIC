@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pandas as pd
 import xarray as xr
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
@@ -22,7 +23,7 @@ import eval_common as C
 YEAR = C.YEAR
 
 
-def build_rollout_gmean(var, short, levels, regions) -> pd.DataFrame:
+def build_rollout_gmean(var: str, short: str, levels: list[int], regions: list[str]) -> pd.DataFrame:
     csv = C.OUTDIR / f"{C.RUN}_rollout_gmean_{short}_{C.level_tag()}.csv"
     if csv.exists():
         df = pd.read_csv(csv, parse_dates=["init_date"])
@@ -55,7 +56,7 @@ def build_rollout_gmean(var, short, levels, regions) -> pd.DataFrame:
     return df
 
 
-def build_ref(var, levels, regions) -> pd.DataFrame:
+def build_ref(var: str, levels: list[int], regions: list[str]) -> pd.DataFrame:
     """Reference daily area-mean per region, as a tidy frame."""
     truth = C.truth_at_levels(var, levels)
     frames = []
@@ -69,7 +70,7 @@ def build_ref(var, levels, regions) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-def spaghetti(ax, roll_lev, ref_daily_lev, level, color, label, units, region, every=1):
+def spaghetti(ax: plt.Axes, roll_lev: pd.DataFrame, ref_daily_lev: pd.DataFrame, level: int, color: str | tuple, label: str, units: str, region: str, every: int = 1):
     r = roll_lev.copy()
     r["valid_time"] = r["init_date"] + pd.to_timedelta(r["lead_hours"], unit="h")
     r["lead_day_idx"] = (r["lead_hours"] // 24).astype(int)
@@ -97,7 +98,7 @@ def spaghetti(ax, roll_lev, ref_daily_lev, level, color, label, units, region, e
     ax.legend(loc="upper left", framealpha=0.9)
 
 
-def plot_variable(var, levels, regions, periods):
+def plot_variable(var: str, levels: list[int], regions: list[str], periods: list[int]):
     meta = C.VARIABLES[var]
     short, units, label = meta["short"], meta["units"], meta["label"]
     print(f"=== spaghetti: {var} ({short}) ===")

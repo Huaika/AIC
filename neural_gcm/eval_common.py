@@ -125,6 +125,7 @@ DEFAULT_VARS = ["temperature", "geopotential", "specific_humidity",
 
 
 def selected_variables() -> list[str]:
+    """List of canonical variable names selected for evaluation."""
     env = os.environ.get("EVAL_VARS", "").strip()
     vs = ([v.strip() for v in env.replace(",", " ").split()] if env
           else list(DEFAULT_VARS))
@@ -189,7 +190,7 @@ def select_region(da: xr.DataArray, region: str) -> xr.DataArray:
     return da.sel(latitude=slice(s, n))
 
 
-def region_extent(region: str):
+def region_extent(region: str) -> tuple[float, float, float, float]:
     """(lon_west, lon_east, lat_south, lat_north) for map axis limits."""
     s, n, w, e = REGIONS[region]
     return w, e, s, n
@@ -230,7 +231,7 @@ def selected_periods() -> list[int]:
     return ps
 
 
-def pred_init_month(path) -> int:
+def pred_init_month(path: str | Path) -> int:
     """Month 1..12 parsed from a pred_<year>_<YYYY-MM-DD>.nc filename."""
     return int(Path(path).stem.split("_")[-1].split("-")[1])
 
@@ -319,7 +320,7 @@ def prediction_levels() -> list[int]:
     return _PRED_LEVELS
 
 
-def prediction_grid():
+def prediction_grid() -> tuple[np.ndarray, np.ndarray]:
     global _PRED_GRID
     if _PRED_GRID is None:
         with xr.open_dataset(_first_pred()) as ds:
@@ -359,7 +360,7 @@ def requested_levels() -> list[int]:
 # --------------------------------------------------------------------------- #
 # Model-grid truth temperature (the only run-specific data path)
 # --------------------------------------------------------------------------- #
-def _build_regridder(sample: xr.DataArray):
+def _build_regridder(sample: xr.DataArray) -> horizontal_interpolation.ConservativeRegridder:
     gcs = gcsfs.GCSFileSystem(token="anon")
     with gcs.open(f"gs://neuralgcm/models/{MODEL_NAME}", "rb") as f:
         model = neuralgcm.PressureLevelModel.from_checkpoint(pickle.load(f))

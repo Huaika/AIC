@@ -14,8 +14,9 @@ figures/<run>/<region>/<variable>/drift_maps/.
 """
 from __future__ import annotations
 
-import numpy as np
+import pandas as pd
 import xarray as xr
+import numpy as np
 import matplotlib.pyplot as plt
 
 import eval_common as C
@@ -24,7 +25,7 @@ YEAR = C.YEAR
 FINAL_DAY_LEAD_MIN = 216
 
 
-def build_fields(var, short, levels, truth, period) -> xr.Dataset | None:
+def build_fields(var: str, short: str, levels: list[int], truth: xr.Dataset, period: int) -> xr.Dataset | None:
     """Day-10 clim / reference clim / drift fields for a period, cached per
     (run, var, period). period 0 = entire year (reuses the existing annual cache
     name); month m = mean over that month's init-days only (truth restricted to
@@ -70,7 +71,7 @@ def build_fields(var, short, levels, truth, period) -> xr.Dataset | None:
     return out
 
 
-def plot_period_region(out, var, short, units, label, fcmap, levels, period, reg):
+def plot_period_region(out: xr.Dataset, var: str, short: str, units: str, label: str, fcmap: str, levels: list[int], period: int, reg: str):
     figdir = C.figure_dir(period, reg, var, "drift_maps")
     w, e, s, n_ = C.region_extent(reg)
     area = "global" if reg == "world" else reg
@@ -107,7 +108,7 @@ def plot_period_region(out, var, short, units, label, fcmap, levels, period, reg
         fig.savefig(out_png, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 
-def plot_variable(var, levels, regions, periods):
+def plot_variable(var: str, levels: list[int], regions: list[str], periods: list[int]):
     meta = C.VARIABLES[var]
     short, units, label, fcmap = (meta["short"], meta["units"],
                                   meta["label"], meta["cmap"])

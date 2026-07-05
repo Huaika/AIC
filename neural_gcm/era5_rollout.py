@@ -38,19 +38,15 @@ Environment:
 from __future__ import annotations
 
 import os
+import pickle
 import time
 from pathlib import Path
-
-os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-os.environ.setdefault("XLA_PYTHON_CLIENT_ALLOCATOR", "default")
-
-import pickle
 
 import gcsfs
 import jax
 import numpy as np
 import pandas as pd
-import xarray
+import xarray as xr
 
 from dinosaur import horizontal_interpolation, spherical_harmonic, xarray_utils
 import neuralgcm
@@ -85,14 +81,14 @@ def load_model() -> neuralgcm.PressureLevelModel:
     return neuralgcm.PressureLevelModel.from_checkpoint(ckpt)
 
 
-def open_era5() -> xarray.Dataset:
+def open_era5() -> xr.Dataset:
     files = sorted(IN_DIR.glob(f"era5_6hourly_{YEAR}_*.nc"))
     if not files:
         raise SystemExit(f"no staged ERA5 files in {IN_DIR}")
-    return xarray.open_mfdataset(files, combine="by_coords")
+    return xr.open_mfdataset(files, combine="by_coords")
 
 
-def build_regridder(sample, model):
+def build_regridder(sample: xr.Dataset | xr.DataArray, model: neuralgcm.PressureLevelModel) -> horizontal_interpolation.ConservativeRegridder:
     src = spherical_harmonic.Grid(
         latitude_nodes=sample.sizes["latitude"],
         longitude_nodes=sample.sizes["longitude"],
@@ -110,8 +106,8 @@ def _end_str(init_date: str, days: int) -> str:
 # --------------------------------------------------------------------------- #
 # Per-init-day forecast
 # --------------------------------------------------------------------------- #
-def run_one(model, regridder, ds, init_date: str) -> xarray.Dataset:
-    def regrid(d):
+def run_one(model: neuralgcm.PressureLevelModel, regridder: horizontal_interpolation.ConservativeRegridder, ds: xr.Dataset, init_date: str) -> xr.Dataset:
+    def regrid(d: xr.Dataset | xr.DataArray):
         return xarray_utils.fill_nan_with_nearest(xarray_utils.regrid(d, regridder))
 
     # --- atmospheric inputs at the single initial time t0 (already 37 levels) ---
@@ -140,7 +136,7 @@ def run_one(model, regridder, ds, init_date: str) -> xarray.Dataset:
     if want_end > data_last:
         tail_t = forcing.time.values[-1] + np.timedelta64(ROLLOUT_DAYS, "D")
         tail = forcing.isel(time=-1).assign_coords(time=tail_t).expand_dims("time")
-        forcing = xarray.concat([forcing, tail], dim="time")
+        forcing = xr.concat([forcing, tail], dim="time")
         print(f"[{init_date}] forecast runs past data front {data_last}; "
               f"persisting last SST/sea-ice ({forcing.time.values[-2]}) over the tail",
               flush=True)
