@@ -16,10 +16,10 @@
 #SBATCH --output=/pfs/work9/workspace/scratch/ka_hc5935-ai-climate/era5_staging_logs/spread_%j.log
 #SBATCH --error=/pfs/work9/workspace/scratch/ka_hc5935-ai-climate/era5_staging_logs/spread_%j.log
 set -uo pipefail
-cd "$SLURM_SUBMIT_DIR"
+cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 LOGDIR=/pfs/work9/workspace/scratch/ka_hc5935-ai-climate/era5_staging_logs
 mkdir -p "$LOGDIR"
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 NODES=9
 
 # months still needing download (year month) -- 1955-06 is handled by the
@@ -35,7 +35,7 @@ for spec in "${MONTHS[@]}"; do
   set -- $spec; y=$1; m=$2
   ERA5_YEAR=$y ERA5_MONTH=$m srun --exclusive --ntasks=1 --nodes=1 \
       --output="$LOGDIR/spread_${y}_${m}.log" \
-      "$PY" stage_era5.py &
+      "$PY" -m ngcm.stage_era5 &
   # keep at most NODES steps in flight -> one per node
   while [ "$(jobs -r | wc -l)" -ge "$NODES" ]; do sleep 5; done
 done

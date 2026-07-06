@@ -28,10 +28,10 @@
 #SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs/eval_%A_%a.log
 #SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs/eval_%A_%a.log
 set -euo pipefail
-cd "$SLURM_SUBMIT_DIR"
+cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs
 
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 export JAX_PLATFORMS=cpu
 export MPLBACKEND=Agg
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-8}
@@ -45,10 +45,10 @@ echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} run=${EVAL_RUN} "\
 "interval=${NG_LEVEL_INTERVAL} levels=${NG_LEVELS:-<interval>} vars=${EVAL_VARS:-<default5>}"
 
 # 1) build the per-variable model-grid truth caches once, single pass (no-op if present)
-"$PY" -c "import eval_common as c; c.ensure_native_truth()"
+"$PY" -c "from ngcm import eval_common as c; c.ensure_native_truth()"
 # 2) all three plot families, each sweeping every requested variable x level
-"$PY" plot_spaghetti.py
-"$PY" plot_drift.py
-"$PY" plot_drift_maps.py
+"$PY" -m ngcm.plots.spaghetti
+"$PY" -m ngcm.plots.drift
+"$PY" -m ngcm.plots.drift_maps
 
 echo "$(date '+%F %T') done run=${EVAL_RUN}"

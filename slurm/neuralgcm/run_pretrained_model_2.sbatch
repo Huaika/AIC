@@ -18,9 +18,9 @@
 # (UC3 compute nodes have outbound internet, verified). GPU-only: JAX_PLATFORMS=cuda
 # makes JAX fail loudly rather than silently fall back to CPU if no GPU is visible.
 set -euo pipefail
-cd "$SLURM_SUBMIT_DIR"
+cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 
 echo "$(date '+%F %T') start on $(hostname) | job $SLURM_JOB_ID | CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
 nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader || true

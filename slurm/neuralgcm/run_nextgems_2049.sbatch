@@ -27,10 +27,10 @@
 # Subset/resume: sbatch --array=0-9 run_nextgems_2049.sbatch
 #                sbatch --array=0-354 run_nextgems_2049.sbatch      (re-fill gaps)
 set -euo pipefail
-cd "$SLURM_SUBMIT_DIR"
+cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 mkdir -p results_nextgems_2049/logs
 
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 
 export JAX_PLATFORMS="${JAX_PLATFORMS:-cuda}"
 export XLA_PYTHON_CLIENT_PREALLOCATE=false

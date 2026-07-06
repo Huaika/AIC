@@ -25,10 +25,10 @@
 #SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_rollout_logs/roll_%A_%a.log
 #SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_rollout_logs/roll_%A_%a.log
 set -euo pipefail
-cd "$SLURM_SUBMIT_DIR"
+cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_rollout_logs
 
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 export JAX_PLATFORMS="${JAX_PLATFORMS:-cuda}"
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export XLA_PYTHON_CLIENT_ALLOCATOR=default
@@ -45,4 +45,4 @@ echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} array=${SLURM_ARRAY_
 "year=${ERA5_YEAR} init_start=${ERA5_INIT_START} count=${ERA5_INIT_COUNT}"
 nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader || true
 
-exec "$PY" era5_rollout.py
+exec "$PY" -m ngcm.era5_rollout

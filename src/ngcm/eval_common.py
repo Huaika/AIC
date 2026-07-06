@@ -109,9 +109,16 @@ PRED_DIR = Path(CFG["pred_dir"])
 MODEL = "graphcast" if RUN.startswith("graphcast") else "neuralgcm"
 DATASET = CFG["truth_kind"]
 
-OUTDIR = Path(f"results_eval_{RUN}")
-FIGROOT = Path(f"figures/{RUN}")
-OUTDIR.mkdir(exist_ok=True)
+# Committed figures live in the repo (outputs/figures/); heavy caches + results
+# live on workspace scratch (out of the repo). Both env-overridable. REPO_ROOT is
+# derived from this file: src/ngcm/eval_common.py -> parents[2] = repo.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FIG_ROOT = Path(os.environ.get("EVAL_FIG_ROOT", str(REPO_ROOT / "outputs" / "figures")))
+RESULTS_ROOT = Path(os.environ.get(
+    "EVAL_RESULTS_ROOT", f"{WS}/ka_dm9435-ai-climate/eval_results"))
+OUTDIR = RESULTS_ROOT / f"results_eval_{RUN}"
+FIGROOT = FIG_ROOT / RUN
+OUTDIR.mkdir(parents=True, exist_ok=True)
 
 TRUTH_BATCH = int(os.environ.get("EVAL_TRUTH_BATCH", "24"))
 

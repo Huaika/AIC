@@ -15,7 +15,7 @@ cd "$(dirname "$0")"
 
 YEAR="${1:?usage: run_year_once.sh <year> [gpu_label]}"
 GPU="${2:-${CUDA_VISIBLE_DEVICES:-?}}"
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 
 echo "$(date '+%F %T') [${YEAR}] start on GPU ${GPU} (CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset})"
 

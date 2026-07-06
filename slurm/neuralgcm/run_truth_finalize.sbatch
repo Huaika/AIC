@@ -14,15 +14,15 @@
 #SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs/final_%x_%A.log
 #SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs/final_%x_%A.log
 set -euo pipefail
-cd "$SLURM_SUBMIT_DIR"
+cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs
 
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 export JAX_PLATFORMS=cpu
 export MPLBACKEND=Agg
 export EVAL_VARS="${EVAL_VARS:-}"
 : "${EVAL_RUN:?export EVAL_RUN before submitting}"
 
 echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} run=${EVAL_RUN} finalize"
-"$PY" -c "import eval_common as c; c.finalize_truth()"
+"$PY" -c "from ngcm import eval_common as c; c.finalize_truth()"
 echo "$(date '+%F %T') done finalize run=${EVAL_RUN}"

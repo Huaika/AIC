@@ -19,10 +19,10 @@
 #SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_staging_logs/stage_%A_%a.log
 #SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_staging_logs/stage_%A_%a.log
 set -euo pipefail
-cd "$SLURM_SUBMIT_DIR"
+cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_staging_logs
 
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 export ERA5_YEAR=2026
 export ERA5_MONTH=$(( SLURM_ARRAY_TASK_ID + 1 ))
 export ERA5_END_DATE=2026-06-24
@@ -32,4 +32,4 @@ echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} "\
 "array=${SLURM_ARRAY_JOB_ID}:${SLURM_ARRAY_TASK_ID} year=${ERA5_YEAR} month=${ERA5_MONTH} "\
 "end=${ERA5_END_DATE}"
 
-exec "$PY" stage_era5.py
+exec "$PY" -m ngcm.stage_era5

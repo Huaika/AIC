@@ -19,10 +19,10 @@
 #SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs/chunk_%x_%A_%a.log
 #SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs/chunk_%x_%A_%a.log
 set -euo pipefail
-cd "$SLURM_SUBMIT_DIR"
+cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/eval_logs
 
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 export JAX_PLATFORMS=cpu
 export MPLBACKEND=Agg
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-12}
@@ -37,6 +37,6 @@ T1=$(( T0 + CHUNK_STEPS ))
 echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} run=${EVAL_RUN} "\
 "chunk=${idx} steps=[${T0},${T1}) vars=${EVAL_VARS:-<default5>}"
 
-"$PY" -c "import eval_common as c; c.build_truth_chunk(${T0}, ${T1})"
+"$PY" -c "from ngcm import eval_common as c; c.build_truth_chunk(${T0}, ${T1})"
 
 echo "$(date '+%F %T') done chunk ${idx} run=${EVAL_RUN}"

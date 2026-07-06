@@ -88,6 +88,17 @@ def validation_error(
           f"level dimension is {dataset.sizes.get('level')}, "
           f"expected {len(pressure_levels)}"
       )
+    # Check level VALUES, not just the count: concurrent writes (the earlier
+    # collision) produced cases whose level coord is all int32 _FillValue
+    # (-2147483647) -> duplicates -> dataset.sel(level=...) raises InvalidIndexError
+    # at rollout time. Size alone (13) doesn't catch this.
+    if "level" in dataset.coords:
+      import numpy as _np  # pylint: disable=import-outside-toplevel
+      lv = _np.asarray(dataset["level"].values).astype("int64")
+      if len(set(lv.tolist())) != len(lv):
+        return f"level coord has duplicate/invalid values: {lv.tolist()}"
+      if set(lv.tolist()) != {int(x) for x in pressure_levels}:
+        return f"level coord values {sorted(set(lv.tolist()))} != expected {sorted(int(x) for x in pressure_levels)}"
     missing = sorted(REQUIRED_VARIABLES - set(dataset.data_vars))
     if missing:
       return f"missing variables: {', '.join(missing)}"

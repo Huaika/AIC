@@ -17,8 +17,8 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 
-import eval_common as C
-import fig_naming
+from ngcm import eval_common as C
+from common import fig_naming
 
 YEAR = C.YEAR
 

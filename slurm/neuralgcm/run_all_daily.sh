@@ -23,7 +23,7 @@ POLL="${RACKOW_POLL_SECONDS:-30}"
 mkdir -p results_daily
 
 # --- failsafe: rebuild the env if a container rebuild wiped it -----------------
-if ! ./.venv/bin/python -c "import neuralgcm" >/dev/null 2>&1; then
+if ! /pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python -c "import neuralgcm" >/dev/null 2>&1; then
   echo "$(date '+%F %T') venv missing/broken -> rebuilding via setup_env.sh ..."
   bash setup_env.sh
 fi

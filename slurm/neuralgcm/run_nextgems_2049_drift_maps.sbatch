@@ -13,10 +13,10 @@
 #SBATCH --output=results_nextgems_2049/logs/driftmap_%j.log
 #SBATCH --error=results_nextgems_2049/logs/driftmap_%j.log
 set -euo pipefail
-cd "$SLURM_SUBMIT_DIR"
+cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 mkdir -p results_nextgems_2049/logs
 
-PY="$(pwd)/.venv/bin/python"
+PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 export JAX_PLATFORMS=cpu
 export MPLBACKEND=Agg
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-8}

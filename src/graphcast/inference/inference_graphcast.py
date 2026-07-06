@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -11,14 +12,16 @@ import xarray as xr
 
 import haiku as hk  # pylint: disable=import-outside-toplevel
 import jax  # pylint: disable=import-outside-toplevel
+import pandas as pd  # pylint: disable=import-outside-toplevel
 from google.api_core import exceptions as google_exceptions  # pylint: disable=import-outside-toplevel
 from google.cloud import storage  # pylint: disable=import-outside-toplevel
+from graphcast import autoregressive  # pylint: disable=import-outside-toplevel
 from graphcast import casting  # pylint: disable=import-outside-toplevel
 from graphcast import checkpoint  # pylint: disable=import-outside-toplevel
 from graphcast import data_utils  # pylint: disable=import-outside-toplevel
 from graphcast import graphcast  # pylint: disable=import-outside-toplevel
 from graphcast import normalization  # pylint: disable=import-outside-toplevel
-from graphcast import rollout  # pylint: disable=import-outside-toplevel
+from graphcast import rollout  # pylint: disable=import-outside-toplevel,unused-import
 from graphcast import xarray_jax  # pylint: disable=import-outside-toplevel,unused-import
 
 if __package__:
@@ -54,7 +57,6 @@ DEFAULT_REFERENCE_ERA5 = (
 DEFAULT_ROLLOUT_STEPS = 40
 DEFAULT_STEP_HOURS = 6
 DEFAULT_SEED = 1
-KEEP_INPUTS_ON_DEVICE = True
 METRICS_FREQUENCY = os.environ.get("GRAPHCAST_METRICS_FREQUENCY", "daily")
 REFERENCE_MODE = os.environ.get("GRAPHCAST_REFERENCE_MODE", "auto")
 METRIC_VARIABLE = os.environ.get("GRAPHCAST_METRIC_VARIABLE", "2m_temperature")
@@ -249,8 +251,10 @@ def configured_reference_era5_uri(
     task_config: Any,
     rollout_steps: int,
     step_hours: int,
+    init_time: str | None = None,
 ) -> str:
-  init_time = os.environ.get("GRAPHCAST_INIT_TIME")
+  if init_time is None:
+    init_time = os.environ.get("GRAPHCAST_INIT_TIME")
   if env_flag("GRAPHCAST_USE_NEXTGEMS"):
     if not init_time:
       raise ValueError(
@@ -403,10 +407,11 @@ def read_reference_era5(
     task_config: Any,
     rollout_steps: int = DEFAULT_ROLLOUT_STEPS,
     step_hours: int = DEFAULT_STEP_HOURS,
+    init_time: str | None = None,
 ) -> tuple[xr.Dataset, xr.Dataset, xr.Dataset, xr.Dataset, str]:
   """Read reference ERA5 and extract GraphCast inputs, template, forcings, truth."""
   reference_uri = configured_reference_era5_uri(
-      cache_dir, task_config, rollout_steps, step_hours)
+      cache_dir, task_config, rollout_steps, step_hours, init_time)
   reference, label = open_reference_era5(bucket, cache_dir, reference_uri)
   if reference.sizes["time"] < 3:
     raise ValueError("Reference ERA5 needs at least 3 timesteps: 2 inputs + 1 target.")
@@ -443,13 +448,22 @@ def build_jitted_predictor(
     model_config: Any,
     task_config: Any,
     stats: dict[str, xr.Dataset],
+    gradient_checkpointing: bool = False,
 ):
-  """Build a jitted one-step GraphCast predictor with casting and normalization."""
+  """Build a jitted GraphCast predictor that unrolls the whole trajectory.
+
+  The one-step GraphCast is wrapped in ``autoregressive.Predictor`` so a single
+  jitted call runs the full rollout via ``hk.scan`` on-device. This is the
+  GraphCast analogue of NeuralGCM's ``model.unroll``: it removes the per-step
+  Python loop and the per-step host<->device round-trips of the previous
+  implementation.
+  """
   hk = modules["hk"]
   jax = modules["jax"]
   graphcast_module = modules["graphcast"]
   casting_module = modules["casting"]
   normalization_module = modules["normalization"]
+  autoregressive_module = modules["autoregressive"]
 
   def construct_wrapped_graphcast():
     predictor = graphcast_module.GraphCast(model_config, task_config)
@@ -460,6 +474,8 @@ def build_jitted_predictor(
         mean_by_level=stats["mean_by_level"],
         stddev_by_level=stats["stddev_by_level"],
     )
+    predictor = autoregressive_module.Predictor(
+        predictor, gradient_checkpointing=gradient_checkpointing)
     return predictor
 
   @hk.transform_with_state
@@ -477,82 +493,249 @@ def build_jitted_predictor(
   return jax.jit(predictor)
 
 
-def run_autoregressive_rollout(
+def run_fused_rollout(
     modules: dict[str, Any],
     predictor: Any,
     rng_seed: int,
     inputs: xr.Dataset,
     targets_template: xr.Dataset,
     forcings: xr.Dataset,
-    rollout_steps: int,
-    step_hours: int,
-    keep_inputs_on_device: bool,
-    metric_variable: str,
-    metric_level: int | None,
-) -> xr.DataArray:
+) -> xr.Dataset:
+  """Run the entire rollout in a single jitted call and pull results off-device once.
+
+  Unlike the previous step-by-step host loop, the autoregressive feedback happens
+  inside ``hk.scan`` on the accelerator; here we only do a single ``device_get``
+  of the full predicted trajectory. Returns the full prediction Dataset (all
+  variables, all lead times), with the target lead-time coordinates.
+  """
   jax = modules["jax"]
   rng = jax.random.PRNGKey(rng_seed)
-  base_target_time = targets_template.coords["time"].isel(time=slice(0, 1))
-  one_step_template = xr.full_like(
-      targets_template.isel(time=slice(0, 1)), np.nan).assign_coords(
-          time=base_target_time).compute()
-  current_inputs = inputs.compute()
-  input_time_coords = inputs.coords["time"]
-  metric_predictions = []
+  predictions = predictor(
+      rng,
+      inputs.compute(),
+      targets_template.compute(),
+      forcings.compute(),
+  )
+  predictions = jax.device_get(predictions)
+  return predictions.assign_coords(time=targets_template.coords["time"])
 
-  for step in range(rollout_steps):
-    lead_hours = (step + 1) * step_hours
+
+# --------------------------------------------------------------------------- #
+# Batch-over-init-days driver (NeuralGCM-style: load model once, loop days)
+# --------------------------------------------------------------------------- #
+def safe_time_label(init_time: str) -> str:
+  return pd.Timestamp(init_time).strftime("%Y%m%d_%H")
+
+
+def init_times_for_batch(rollout_steps: int, step_hours: int) -> list[str | None]:
+  """Return the init-times this process should run (year sweep or single).
+
+  With GRAPHCAST_YEAR set, generate one init-time per GRAPHCAST_INIT_STRIDE_DAYS
+  at GRAPHCAST_INIT_HOUR, bounded so the whole rollout stays inside the year.
+  Otherwise fall back to a single init (GRAPHCAST_INIT_TIME, possibly None ->
+  local reference file). GRAPHCAST_INIT_START/_COUNT then select this process's
+  slice (batching, exactly like ERA5_INIT_START/_COUNT in era5_rollout.py).
+  """
+  year = os.environ.get("GRAPHCAST_YEAR")
+  if year:
+    hour = int(os.environ.get("GRAPHCAST_INIT_HOUR", "6"))
+    stride = int(os.environ.get("GRAPHCAST_INIT_STRIDE_DAYS", "1"))
+    lead = pd.Timedelta(hours=rollout_steps * step_hours)
+    year_end = pd.Timestamp(f"{year}-12-31T23:00")
+    starts = pd.date_range(f"{year}-01-01", f"{year}-12-31", freq=f"{stride}D")
+    all_inits = [
+        s + pd.Timedelta(hours=hour)
+        for s in starts
+        if (s + pd.Timedelta(hours=hour) + lead) <= year_end
+    ]
+    inits: list[str | None] = [t.strftime("%Y-%m-%dT%H:00") for t in all_inits]
+  else:
+    inits = [os.environ.get("GRAPHCAST_INIT_TIME")]
+
+  start = int(os.environ.get("GRAPHCAST_INIT_START", "0"))
+  count = int(os.environ.get("GRAPHCAST_INIT_COUNT", str(len(inits))))
+  return inits[start:start + count]
+
+
+def output_paths(init_time: str | None, rollout_steps: int, step_hours: int) -> dict[str, Path]:
+  """Per-init output paths. Batch layout under GRAPHCAST_OUT_DIR, else legacy env."""
+  out_dir = os.environ.get("GRAPHCAST_OUT_DIR")
+  if out_dir is None:
+    # Legacy single-init mode: honor the explicit env CSV/plot paths.
+    return {
+        "evolution_csv": EVOLUTION_CSV,
+        "metrics_csv": OUTPUT_CSV,
+        "evolution_png": EVOLUTION_PLOT_PATH,
+        "metrics_png": PLOT_PATH,
+        "pred_nc": Path(os.environ["GRAPHCAST_PRED_NC"])
+        if os.environ.get("GRAPHCAST_PRED_NC")
+        else None,
+    }
+
+  # NeuralGCM-compatible layout: flat pred_<year>_<YYYY-MM-DD>.nc directly under
+  # GRAPHCAST_OUT_DIR (a .../predictions dir) so eval_common's
+  # `glob("pred_<year>_*.nc")` picks them up; metric CSVs go in a metrics/ subdir
+  # so they don't pollute that glob. (Coords are renamed to latitude/longitude in
+  # prediction_output_dataset.)
+  if env_flag("GRAPHCAST_NEURALGCM_LAYOUT") and init_time is not None:
+    ts = pd.Timestamp(init_time)
+    date = ts.strftime("%Y-%m-%d")
+    base = Path(out_dir).expanduser()
+    metrics = base / "metrics"
+    # Two-stage pipeline: when GRAPHCAST_FINAL_DIR is set, GPU writes the raw
+    # (uncompressed) pred here (OUT_DIR = .../predictions_raw) and a CPU stage
+    # compresses it into FINAL_DIR (.../predictions). "final_nc" lets the GPU
+    # resumability skip a day whose compressed final already exists (so deleting
+    # the raw after compression doesn't trigger a needless rebuild).
+    final_dir = os.environ.get("GRAPHCAST_FINAL_DIR")
+    final_nc = (Path(final_dir).expanduser() / f"pred_{ts.year}_{date}.nc"
+                if final_dir else None)
+    return {
+        "evolution_csv": metrics / f"pred_{ts.year}_{date}_{METRIC_ID}_evolution.csv",
+        "metrics_csv": metrics / f"pred_{ts.year}_{date}_{METRIC_ID}_rmse_bias.csv",
+        "evolution_png": metrics / f"pred_{ts.year}_{date}_{METRIC_ID}_evolution.png",
+        "metrics_png": metrics / f"pred_{ts.year}_{date}_{METRIC_ID}_rmse_bias.png",
+        "pred_nc": base / f"pred_{ts.year}_{date}.nc",
+        "final_nc": final_nc,
+    }
+
+  label = safe_time_label(init_time) if init_time else "reference"
+  days = rollout_steps * step_hours // 24
+  prefix = os.environ.get("GRAPHCAST_RUN_PREFIX", "operational")
+  day_dir = Path(out_dir).expanduser() / f"{prefix}_{label}_{days}d"
+  return {
+      "evolution_csv": day_dir / f"{METRIC_ID}_global_mean_evolution.csv",
+      "metrics_csv": day_dir / f"{METRIC_ID}_rmse_bias_operational_daily.csv",
+      "evolution_png": day_dir / f"{METRIC_ID}_global_mean_evolution.png",
+      "metrics_png": day_dir / f"{METRIC_ID}_rmse_bias_operational_daily.png",
+      "pred_nc": day_dir / f"pred_{label}.nc",
+  }
+
+
+def prediction_output_dataset(
+    predictions: xr.Dataset,
+    init_time: str | None,
+    step_hours: int,
+) -> xr.Dataset:
+  """Add lead_hours / valid_time coords for a self-describing prediction file."""
+  ds = predictions.isel(batch=0, drop=True) if "batch" in predictions.dims else predictions
+  lead_h = timedelta_hours_int(ds.coords["time"].values, step_hours)
+  ds = ds.assign_coords(lead_hours=("time", lead_h.astype(np.int32)))
+  if init_time is not None:
+    valid = np.datetime64(pd.Timestamp(init_time)) + lead_h * np.timedelta64(1, "h")
+    ds = ds.assign_coords(valid_time=("time", valid))
+  ds.attrs.update(
+      source="GraphCast fused autoregressive rollout",
+      init_time=str(init_time) if init_time else "",
+      rollout_steps=predictions.sizes["time"],
+      step_hours=step_hours,
+  )
+  # Match NeuralGCM's coordinate naming so the same eval/figure pipeline applies.
+  rename = {old: new for old, new in {"lat": "latitude", "lon": "longitude"}.items()
+            if old in ds.coords or old in ds.dims}
+  if rename:
+    ds = ds.rename(rename)
+  return ds
+
+
+def timedelta_hours_int(values: np.ndarray, step_hours: int) -> np.ndarray:
+  if np.issubdtype(values.dtype, np.timedelta64):
+    return values.astype("timedelta64[h]").astype(np.int64)
+  return np.arange(1, len(values) + 1, dtype=np.int64) * step_hours
+
+
+def write_prediction_netcdf(ds: xr.Dataset, path: Path) -> None:
+  path.parent.mkdir(parents=True, exist_ok=True)
+  # GRAPHCAST_WRITE_COMPLEVEL=0 -> uncompressed (fast, for the "compress on CPU
+  # later" pipeline); >0 -> zlib at that level (default 4).
+  complevel = int(os.environ.get("GRAPHCAST_WRITE_COMPLEVEL", "4"))
+  if complevel > 0:
+    base = {"dtype": "float32", "zlib": True, "complevel": complevel}
+  else:
+    base = {"dtype": "float32"}
+  enc = {v: dict(base) for v in ds.data_vars if np.issubdtype(ds[v].dtype, np.floating)}
+  tmp = path.with_suffix(".nc.tmp")
+  ds.to_netcdf(tmp, encoding=enc)
+  tmp.rename(path)
+
+
+def process(
+    modules: dict[str, Any],
+    bucket: Any,
+    cache_dir: Path,
+    predictor: Any,
+    task_config: Any,
+    init_time: str | None,
+    rollout_steps: int,
+    step_hours: int,
+    seed: int,
+    write_netcdf: bool,
+    force: bool,
+) -> None:
+  # Phase 1 can save ONLY the prediction NetCDFs (metrics CSVs + plots are phase 2).
+  netcdf_only = env_flag("GRAPHCAST_NETCDF_ONLY", default=False)
+  paths = output_paths(init_time, rollout_steps, step_hours)
+
+  if netcdf_only:
+    fin = paths.get("final_nc")
+    done = (paths["pred_nc"] is not None and paths["pred_nc"].exists()) \
+        or (fin is not None and fin.exists())
+  else:
+    done = paths["evolution_csv"].exists() and paths["metrics_csv"].exists()
+    if write_netcdf and paths["pred_nc"] is not None:
+      done = done and paths["pred_nc"].exists()
+  if done and not force:
+    logging.info("[%s] outputs already exist -> skip", init_time)
+    return
+
+  t0 = time.time()
+  inputs, targets_template, forcings, reference_targets, label = read_reference_era5(
+      bucket, cache_dir, task_config, rollout_steps, step_hours, init_time)
+  t_prep = time.time()
+
+  predictions = run_fused_rollout(
+      modules, predictor, seed, inputs, targets_template, forcings)
+  t_roll = time.time()
+
+  if netcdf_only:
+    write_prediction_netcdf(
+        prediction_output_dataset(predictions, init_time, step_hours),
+        paths["pred_nc"])
+    dt = time.time() - t0
     logging.info(
-        "Rollout step %02d/%02d: lead time +%03d h",
-        step + 1,
-        rollout_steps,
-        lead_hours,
-    )
+        "[%s] done in %.1fs (prep %.1fs, rollout %.1fs, write %.1fs) -> %s",
+        init_time, dt, t_prep - t0, t_roll - t_prep, time.time() - t_roll,
+        paths["pred_nc"])
+    return
 
-    target_slice = slice(step, step + 1)
-    actual_target_time = targets_template.coords["time"].isel(time=target_slice)
-    current_forcings = forcings.isel(time=target_slice).assign_coords(
-        time=base_target_time).compute()
+  metric_field = select_metric_field(predictions, METRIC_VARIABLE, METRIC_LEVEL)
+  evolution = compute_global_mean_evolution(
+      predictions=metric_field, inputs=inputs, truth=reference_targets,
+      reference_mode=REFERENCE_MODE, metric_variable=METRIC_VARIABLE,
+      metric_level=METRIC_LEVEL, metric_id=METRIC_ID, init_time=init_time,
+      scenario_label=os.environ.get("GRAPHCAST_SCENARIO_LABEL"))
+  metrics = compute_metric_summary(
+      predictions=metric_field, inputs=inputs, truth=reference_targets,
+      reference_mode=REFERENCE_MODE, step_hours=step_hours,
+      metrics_frequency=METRICS_FREQUENCY, metric_variable=METRIC_VARIABLE,
+      metric_level=METRIC_LEVEL, metric_id=METRIC_ID)
 
-    rng, step_rng = jax.random.split(rng)
-    predictions = predictor(
-        step_rng,
-        current_inputs,
-        one_step_template,
-        current_forcings,
-    )
+  paths["evolution_csv"].parent.mkdir(parents=True, exist_ok=True)
+  evolution.to_csv(paths["evolution_csv"], index=False)
+  metrics.to_csv(paths["metrics_csv"], index=False)
+  if WRITE_PLOT:
+    plot_global_mean_evolution(evolution, paths["evolution_png"], METRIC_ID)
+    plot_metrics(metrics, paths["metrics_png"], METRIC_ID)
+  if write_netcdf and paths["pred_nc"] is not None:
+    write_prediction_netcdf(
+        prediction_output_dataset(predictions, init_time, step_hours),
+        paths["pred_nc"])
 
-    predictions_actual_time = predictions.assign_coords(time=actual_target_time)
-    metric_predictions.append(
-        jax.device_get(select_metric_field(
-            predictions_actual_time, metric_variable, metric_level)))
-
-    if not keep_inputs_on_device:
-      predictions = jax.device_get(predictions)
-      current_forcings = jax.device_get(current_forcings)
-      current_inputs = jax.device_get(current_inputs)
-
-    if step != rollout_steps - 1:
-      next_frame = xr.merge([predictions, current_forcings])
-      current_inputs = next_inputs_from_prediction(
-          current_inputs, next_frame).assign_coords(time=input_time_coords)
-
-  return xr.concat(metric_predictions, dim="time")
-
-
-def next_inputs_from_prediction(prev_inputs: xr.Dataset, next_frame: xr.Dataset) -> xr.Dataset:
-  missing = list(set(prev_inputs.keys()) - set(next_frame.keys()))
-  if missing and "time" in prev_inputs[missing].dims:
-    raise ValueError(
-        "Found time-dependent input variables that were neither predicted nor "
-        f"forced: {missing}"
-    )
-
-  next_keys = list(set(next_frame.keys()).intersection(prev_inputs.keys()))
-  next_inputs = next_frame[next_keys]
-  return xr.concat(
-      [prev_inputs, next_inputs], dim="time", data_vars="different"
-  ).tail(time=prev_inputs.sizes["time"])
+  dt = time.time() - t0
+  logging.info(
+      "[%s] done in %.1fs (prep %.1fs, rollout %.1fs) -> %s | reference=%s",
+      init_time, dt, t_prep - t0, t_roll - t_prep,
+      paths["evolution_csv"].parent, metrics["reference"].iloc[0])
 
 
 def main() -> None:
@@ -560,109 +743,53 @@ def main() -> None:
   cache_dir = Path(os.environ.get("GRAPHCAST_CACHE_DIR", "~/.cache/graphcast")).expanduser()
   rollout_steps = int(os.environ.get("GRAPHCAST_ROLLOUT_STEPS", DEFAULT_ROLLOUT_STEPS))
   step_hours = int(os.environ.get("GRAPHCAST_STEP_HOURS", DEFAULT_STEP_HOURS))
+  seed = int(os.environ.get("GRAPHCAST_SEED", str(DEFAULT_SEED)))
+  write_netcdf = env_flag("GRAPHCAST_WRITE_NETCDF", default=True)
+  force = env_flag("GRAPHCAST_FORCE", default=False)
+  gradient_checkpointing = env_flag("GRAPHCAST_GRADIENT_CHECKPOINTING", default=False)
+
   modules = {
       "hk": hk,
       "jax": jax,
       "graphcast": graphcast,
       "casting": casting,
       "normalization": normalization,
+      "autoregressive": autoregressive,
   }
+  logging.info("JAX devices: %s", jax.devices())
+
+  init_times = init_times_for_batch(rollout_steps, step_hours)
+  if not init_times:
+    logging.info("No init-times selected for this batch; nothing to do.")
+    return
+  logging.info(
+      "Batch of %d init-time(s): %s", len(init_times),
+      [t or "<local-reference>" for t in init_times])
+
+  # Load checkpoint + stats + build the jitted predictor ONCE, reused for all
+  # init-days (the lead-time coordinates are constant, so no recompile per day).
   bucket = anonymous_bucket(storage)
   ckpt, checkpoint_name = load_checkpoint(
-      bucket,
-      checkpoint,
-      graphcast,
-      cache_dir,
-      "operational",
-      os.environ.get("GRAPHCAST_CHECKPOINT_NAME"),
-  )
-
+      bucket, checkpoint, graphcast, cache_dir, "operational",
+      os.environ.get("GRAPHCAST_CHECKPOINT_NAME"))
   stats = load_normalization_stats(bucket, cache_dir)
-  inputs, targets_template, forcings, reference_targets, reference_label = read_reference_era5(
-      bucket,
-      cache_dir,
-      ckpt.task_config,
-      rollout_steps,
-      step_hours,
-  )
-  
-  logging.info("Prepared reference ERA5: %s", reference_label)
-  logging.info("Inputs dims: %s", dict(inputs.sizes))
-  logging.info("Targets template dims: %s", dict(targets_template.sizes))
-  logging.info("Forcings dims: %s", dict(forcings.sizes))
-  logging.info("Reference target dims: %s", dict(reference_targets.sizes))
   logging.info("Checkpoint: %s", checkpoint_name)
-  logging.info("Loaded stats: %s", ", ".join(sorted(stats)))
   logging.info(
-      "Metric variable: %s%s",
+      "Metric variable: %s%s | rollout_steps=%d step_hours=%d",
       METRIC_VARIABLE,
       f" at {METRIC_LEVEL} hPa" if METRIC_LEVEL is not None else "",
-  )
-  
+      rollout_steps, step_hours)
+
   predictor = build_jitted_predictor(
-    modules,
-    ckpt.params,
-    ckpt.model_config,
-    ckpt.task_config,
-    stats,
-  )
-  
-  logging.info("Starting autoregressive rollout")
-  predictions = run_autoregressive_rollout(
-    modules,
-    predictor,
-    DEFAULT_SEED,
-    inputs,
-    targets_template,
-    forcings,
-    rollout_steps,
-    step_hours,
-    KEEP_INPUTS_ON_DEVICE,
-    METRIC_VARIABLE,
-    METRIC_LEVEL,
-  )
+      modules, ckpt.params, ckpt.model_config, ckpt.task_config, stats,
+      gradient_checkpointing=gradient_checkpointing)
 
-  evolution = compute_global_mean_evolution(
-      predictions,
-      inputs,
-      reference_targets,
-      REFERENCE_MODE,
-      METRIC_VARIABLE,
-      METRIC_LEVEL,
-      METRIC_ID,
-      os.environ.get("GRAPHCAST_INIT_TIME"),
-      scenario_label=os.environ.get("GRAPHCAST_SCENARIO_LABEL"),
-  )
-  EVOLUTION_CSV.parent.mkdir(parents=True, exist_ok=True)
-  evolution.to_csv(EVOLUTION_CSV, index=False)
-  logging.info("Wrote global-mean evolution CSV: %s", EVOLUTION_CSV)
+  for init_time in init_times:
+    process(
+        modules, bucket, cache_dir, predictor, ckpt.task_config,
+        init_time, rollout_steps, step_hours, seed, write_netcdf, force)
+  logging.info("done.")
 
-  if WRITE_PLOT:
-    plot_global_mean_evolution(evolution, EVOLUTION_PLOT_PATH, METRIC_ID)
-    logging.info("Wrote global-mean evolution plot: %s", EVOLUTION_PLOT_PATH)
-
-  metrics = compute_metric_summary(
-      predictions,
-      inputs,
-      reference_targets,
-      REFERENCE_MODE,
-      step_hours,
-      METRICS_FREQUENCY,
-      METRIC_VARIABLE,
-      METRIC_LEVEL,
-      METRIC_ID,
-  )
-  OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
-  metrics.to_csv(OUTPUT_CSV, index=False)
-  logging.info("Wrote metrics CSV: %s", OUTPUT_CSV)
-
-  if WRITE_PLOT:
-    plot_metrics(metrics, PLOT_PATH, METRIC_ID)
-    logging.info("Wrote metrics plot: %s", PLOT_PATH)
-
-  logging.info("Checkpoint: %s", checkpoint_name)
-  logging.info("Dataset: %s", reference_label)
-  logging.info("Reference: %s", metrics["reference"].iloc[0])
 
 if __name__ == "__main__":
   main()

@@ -20,7 +20,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-import ng2049_common as C
+from ngcm.legacy import ng2049_common as C
 
 YEAR = C.YEAR
 FIGDIR = C.figure_dir("spaghetti")
