@@ -2,46 +2,35 @@
 .cdsapirc
 **/.cdsapirc
 
-# Large generated/downloaded data
-graphcast/data/
+# Large generated / downloaded data (results live on workspace scratch, not here)
 *.nc
 *.grib
 *.grib2
 *.idx
 *.npz
+src/graphcast/data/
 
-# Runtime outputs
-logs/
-graphcast/results/
-wget-log
-
-# Backup of the embedded GraphCast clone metadata if vendoring source files.
-graphcast/source.git-backup/
-
-# Python caches
+# Python caches / editable-install / build artifacts
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+*.egg-info/
+build/
+dist/
 
-# Local virtualenv (created by neural_gcm/setup_env.sh)
+# Virtualenvs. neural_gcm/ now holds ONLY the ML virtualenv + stray scratch
+# outputs (no source lives there anymore), so ignore it wholesale.
 .venv/
+neural_gcm/
 
-# Local editor / agent config
+# Editor / agent config
 .claude/
-
-# NeuralGCM daily-rollout scheduler runtime artifacts (not source/data)
-neural_gcm/results_daily/*.log
-neural_gcm/results_daily/.done_*
-neural_gcm/results_daily/orchestrator.log
-
-# Generated eval/rollout outputs (figures + CSV/log; .nc already ignored above)
-# neural_gcm/figures/
-neural_gcm/results_eval_*/
-neural_gcm/results_daily_nextgems/
-# neural_gcm/results/
-
-# Editor / workspace junk
 .idea/
 default.jupyterlab-workspace
-# Stray 3.6 GB zip archive accidentally dropped at repo root
-/ziVa8asq
+
+# Runtime logs
+logs/
+wget-log*
+
+# Vendored GraphCast clone metadata backup
+src/graphcast/source.git-backup/
