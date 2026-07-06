@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 import eval_common as C
+import fig_naming
 
 YEAR = C.YEAR
 
@@ -125,7 +126,9 @@ def plot_variable(var, levels, regions, periods):
                 spaghetti(ax, roll_lev, ref_lev, lev, color, label, units, reg, every=1)
                 ax.set_xlabel("Valid time")
                 fig.tight_layout()
-                out = figdir / f"{C.RUN}_spaghetti_L{lev:04d}.png"
+                out = figdir / fig_naming.figure_name(
+                    C.MODEL, C.DATASET, reg, var, lev, C.YEAR,
+                    fig_naming.months_token(period), "spaghetti")
                 fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
         print(f"  saved {C.period_dir_name(period)} x {len(regions)} region(s)")
 

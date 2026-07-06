@@ -18,6 +18,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 
 import eval_common as C
+import fig_naming
 
 YEAR = C.YEAR
 
@@ -108,7 +109,9 @@ def plot_variable(var, levels, regions, periods):
                 ax_bias.tick_params(axis="y", labelcolor="#d62728")
                 ax_rmse.grid(True, alpha=0.3)
                 fig.tight_layout()
-                out = figdir / f"{C.RUN}_drift_rmse_bias_L{lev:04d}.png"
+                out = figdir / fig_naming.figure_name(
+                    C.MODEL, C.DATASET, reg, var, lev, C.YEAR,
+                    fig_naming.months_token(period), "drift_stats")
                 fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
         print(f"  saved {C.period_dir_name(period)} x {len(regions)} region(s)")
 

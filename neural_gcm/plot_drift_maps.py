@@ -19,6 +19,7 @@ import xarray as xr
 import matplotlib.pyplot as plt
 
 import eval_common as C
+import fig_naming
 
 YEAR = C.YEAR
 FINAL_DAY_LEAD_MIN = 216
@@ -103,7 +104,9 @@ def plot_period_region(out, var, short, units, label, fcmap, levels, period, reg
         fig.suptitle(f"{C.REF_LABEL} — mean 10-day {label}@{lev} hPa drift, {area} "
                      f"(Rackow et al. 2024, Fig. 3 style)", y=1.04, fontsize=13)
         fig.tight_layout()
-        out_png = figdir / f"{C.RUN}_driftmap_L{lev:04d}.png"
+        out_png = figdir / fig_naming.figure_name(
+            C.MODEL, C.DATASET, reg, var, lev, C.YEAR,
+            fig_naming.months_token(period), "drift_maps")
         fig.savefig(out_png, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 

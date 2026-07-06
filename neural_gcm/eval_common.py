@@ -76,6 +76,23 @@ RUNS = {
         truth_kind="era5",
         truth_src=f"{WS}/ka_dm9435-ai-climate/era5_2026/inputs",
     ),
+    # GraphCast (0.25deg operational) rollouts, same ERA5 truth as the NeuralGCM
+    # era5_* runs. Predictions are NeuralGCM-compatible (pred_<year>_<date>.nc,
+    # latitude/longitude), so the truth is regridded to the 0.25deg pred grid.
+    "graphcast_era5_2023": dict(
+        year=2023,
+        pred_dir=f"{WS}/ka_dm9435-ai-climate/graphcast_era5_2023/predictions",
+        ref_label="GraphCast ERA5 2023",
+        truth_kind="era5",
+        truth_src=f"{WS}/ka_hc5935-ai-climate/era5_2023/inputs",
+    ),
+    "graphcast_era5_1955": dict(
+        year=1955,
+        pred_dir=f"{WS}/ka_dm9435-ai-climate/graphcast_era5_1955/predictions",
+        ref_label="GraphCast ERA5 1955",
+        truth_kind="era5",
+        truth_src=f"{WS}/ka_hc5935-ai-climate/era5_1955/inputs",
+    ),
 }
 
 RUN = os.environ.get("EVAL_RUN", "").strip()
@@ -85,6 +102,12 @@ CFG = RUNS[RUN]
 YEAR = CFG["year"]
 REF_LABEL = CFG["ref_label"]
 PRED_DIR = Path(CFG["pred_dir"])
+# For the unified figure name (see fig_naming.py): the ML model and the forcing
+# dataset, derived from the run key so both NeuralGCM and GraphCast runs name
+# their figures identically. graphcast_* -> graphcast; else neuralgcm. dataset is
+# the forcing source (== truth_kind here: era5 | nextgems).
+MODEL = "graphcast" if RUN.startswith("graphcast") else "neuralgcm"
+DATASET = CFG["truth_kind"]
 
 OUTDIR = Path(f"results_eval_{RUN}")
 FIGROOT = Path(f"figures/{RUN}")
