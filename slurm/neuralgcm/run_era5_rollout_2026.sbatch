@@ -4,17 +4,17 @@
 # Each array task = a BATCH of 10 init-days (model+regridder loaded once, then a
 # loop) -> ~22-25 min, inside the 30-min short queue.
 #
-# 2026 staged through 2026-06-24 (ERA5 front). ERA5_FORECAST_PAST_FRONT=1 lets
+# 2026 staged through 2026-06-30 (ERA5 front). ERA5_FORECAST_PAST_FRONT=1 lets
 # init-days run up to the front so the 10-day forecast reaches into July; the
 # out-of-data SST/sea-ice is held at its last real value (persistence). Init-days
-# 2026-01-01 .. 2026-06-24 = 175 -> 18 batches (idx 0..17; last batch = 5).
+# 2026-01-01 .. 2026-06-30 = 181 -> 19 batches (idx 0..18; last batch = 1).
 # init_dates_for_year derives the cap from the staged files, so spare batches
 # just print "nothing to do". Resumable: an init-day whose .nc exists is skipped
 # (so re-running only fills the new Jun14..Jun24 inits).
 #
 # Submit AFTER staging completes (or with --dependency=afterok:<stage_jobid>):
 #   sbatch --dependency=afterok:<stage_jobid> run_era5_rollout_2026.sbatch
-#SBATCH --array=0-17
+#SBATCH --array=0-18
 #SBATCH --partition=gpu_h100_short
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
