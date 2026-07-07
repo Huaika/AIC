@@ -118,7 +118,7 @@ def plot_variable(var, levels, regions, periods):
             figdir = C.figure_dir(period, reg, var, "spaghetti")
             roll_r = roll_p[roll_p["region"] == reg]
             ref_r = ref_p[ref_p["region"] == reg]
-            for k, lev in enumerate(levels):
+            for k, lev in enumerate(C.render_levels(levels)):
                 color = cmap(k / max(1, len(levels) - 1))
                 roll_lev = roll_r[roll_r["level"] == lev]
                 ref_lev = ref_r[ref_r["level"] == lev].sort_values("date")

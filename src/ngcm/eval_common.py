@@ -386,6 +386,20 @@ def requested_levels() -> list[int]:
     return kept
 
 
+def render_levels(levels: list[int]) -> list[int]:
+    """Subset of ``levels`` to actually PLOT (NG_PLOT_LEVELS env, comma/space
+    list). Unset -> all of ``levels``. Lets you re-render specific levels from the
+    full (e.g. i50) cache WITHOUT recomputing -- the cache key (level_tag) is
+    unchanged, only the render loop is filtered."""
+    env = os.environ.get("NG_PLOT_LEVELS", "").strip()
+    if not env:
+        return levels
+    want = {int(float(x)) for x in env.replace(",", " ").split()}
+    sub = [l for l in levels if l in want]
+    print(f"[plot-levels] rendering {len(sub)} of {len(levels)}: {sub}")
+    return sub
+
+
 # --------------------------------------------------------------------------- #
 # Model-grid truth temperature (the only run-specific data path)
 # --------------------------------------------------------------------------- #

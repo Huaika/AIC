@@ -93,7 +93,7 @@ def plot_variable(var, levels, regions, periods):
             figdir = C.figure_dir(period, reg, var, "drift_stats")
             area = "global" if reg == "world" else reg
             ar = agg[agg["region"] == reg]
-            for lev in levels:
+            for lev in C.render_levels(levels):
                 a = ar[ar["level"] == lev].sort_values("lead_hours")
                 fig, ax_rmse = plt.subplots(figsize=(6.5, 4.4))
                 ax_bias = ax_rmse.twinx()
