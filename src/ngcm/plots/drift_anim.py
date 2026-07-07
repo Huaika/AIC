@@ -42,6 +42,9 @@ SPECS = [
     ("wind_speed", 850, "wind"),
 ]
 UNITS = {"temperature": "K", "geopotential": "m^2/s^2", "wind_speed": "m/s"}
+# field colormap for the forecast + truth panels (difference panel is always RdBu_r)
+FIELD_CMAP = {"temperature": "RdYlBu_r", "geopotential": "viridis",
+              "wind_speed": "viridis"}
 
 
 def _pred_path(init_date: str):
@@ -59,11 +62,12 @@ def _truth_field(kind: str, var: str, level: int, valid_time) -> xr.DataArray:
     return t.sel(time=valid_time, method="nearest")
 
 
-def _daily_drifts(var: str, level: int, kind: str, month: int):
-    """List of (date, europe-cropped day-10 error field) for every day in month."""
+def _daily_fields(var: str, level: int, kind: str, month: int):
+    """Per day of the month: (date, forecast, truth, error) fields, europe-cropped
+    (lat, lon). forecast = NeuralGCM day-10 field valid that day; truth = ERA5 that
+    day; error = forecast - truth."""
     days = [pd.Timestamp(YEAR, month, d)
             for d in range(1, calendar.monthrange(YEAR, month)[1] + 1)]
-    fc_var = "wind_speed" if kind == "wind" else var
     out = []
     for v in days:
         init = (v - pd.Timedelta(days=LEAD_DAYS)).date()
@@ -80,41 +84,50 @@ def _daily_drifts(var: str, level: int, kind: str, month: int):
             fc = end[var].sel(level=level)
         valid = ds["valid_time"].isel(time=-1).values
         tr = _truth_field(kind, var, level, valid)
-        drift = C.select_region(fc - tr, REGION).transpose("latitude", "longitude")
-        out.append((v, drift.compute()))
+        crop = lambda d: C.select_region(d, REGION).transpose("latitude", "longitude")
+        fc_c, tr_c = crop(fc), crop(tr)
+        out.append((v, fc_c.compute(), tr_c.compute(), (fc_c - tr_c).compute()))
         ds.close()
     return out
 
 
 def _animate(var: str, level: int, kind: str, month: int):
-    frames = _daily_drifts(var, level, kind, month)
+    frames = _daily_fields(var, level, kind, month)
     if not frames:
         print(f"  [skip] {var}@{level} {C.period_dir_name(month)}: no frames")
         return
-    stack = np.stack([f.values for _, f in frames])
-    dlim = float(np.nanpercentile(np.abs(stack), 99)) or 1.0
+    # Fixed scales across the month: field range (forecast+truth) and diverging
+    # error limit -- so every frame is directly comparable.
+    fstack = np.stack([f.values for _, f, _, _ in frames]
+                      + [t.values for _, _, t, _ in frames])
+    vmin, vmax = float(np.nanmin(fstack)), float(np.nanmax(fstack))
+    dlim = float(np.nanpercentile(np.abs(np.stack([d.values for *_, d in frames])), 99)) or 1.0
     lon = frames[0][1].longitude.values
     lat = frames[0][1].latitude.values
     w, e, s, n = C.region_extent(REGION)
     units = UNITS[var]
     label = var.replace("_", " ")
+    fcmap = FIELD_CMAP.get(var, "viridis")
 
-    # Render each day to a fixed-size PNG, then assemble one GIF (0.5 s/frame,
-    # loop forever). Color scale (dlim) is fixed across all frames.
     images = []
-    for d, fld in frames:
-        fig, ax = plt.subplots(figsize=(7.5, 6))
-        m = ax.pcolormesh(lon, lat, fld, cmap="RdBu_r", vmin=-dlim, vmax=dlim,
-                          shading="auto")
-        C.draw_coastlines(ax)
-        ax.set_xlim(w, e); ax.set_ylim(s, n)
-        ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
-        ax.set_title(f"{C.REF_LABEL} — day-10 {label}@{level}hPa error\n"
-                     f"valid {pd.Timestamp(d).date()}  "
-                     f"(init {(pd.Timestamp(d)-pd.Timedelta(days=LEAD_DAYS)).date()})")
-        fig.colorbar(m, ax=ax, shrink=0.85, label=f"day-10 error [{units}]")
+    for d, fc, tr, dr in frames:
+        fig, axes = plt.subplots(1, 3, figsize=(16, 4.8), constrained_layout=True)
+        for ax, fld, ttl, cm, lo, hi, cl in (
+            (axes[0], fc, "NeuralGCM day-10 forecast", fcmap, vmin, vmax, f"{label} [{units}]"),
+            (axes[1], tr, f"{C.REF_LABEL} truth",       fcmap, vmin, vmax, f"{label} [{units}]"),
+            (axes[2], dr, "day-10 error (forecast - truth)", "RdBu_r", -dlim, dlim, f"error [{units}]"),
+        ):
+            m = ax.pcolormesh(lon, lat, fld, cmap=cm, vmin=lo, vmax=hi, shading="auto")
+            C.draw_coastlines(ax)
+            ax.set_xlim(w, e); ax.set_ylim(s, n)
+            ax.set_xlabel("longitude"); ax.set_ylabel("latitude"); ax.set_title(ttl)
+            fig.colorbar(m, ax=ax, shrink=0.8, label=cl)
+        fig.suptitle(f"{C.REF_LABEL} — {label}@{level} hPa, day-10 rollout  |  "
+                     f"valid {pd.Timestamp(d).date()} "
+                     f"(init {(pd.Timestamp(d)-pd.Timedelta(days=LEAD_DAYS)).date()})",
+                     fontsize=13)
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=90)   # fixed size (no tight bbox)
+        fig.savefig(buf, format="png", dpi=90, bbox_inches=None)  # fixed size
         plt.close(fig)
         buf.seek(0)
         images.append(Image.open(buf).convert("RGB"))
@@ -125,7 +138,8 @@ def _animate(var: str, level: int, kind: str, month: int):
         fig_naming.months_token(month), "drift-map-anim", ext="gif")
     images[0].save(out, save_all=True, append_images=images[1:],
                    duration=int(1000 / FPS), loop=0)
-    print(f"  saved {out.name} ({len(frames)} frames, dlim={dlim:.4g} {units})")
+    print(f"  saved {out.name} ({len(frames)} frames, field {vmin:.4g}..{vmax:.4g}, "
+          f"dlim={dlim:.4g} {units})")
 
 
 def main():
