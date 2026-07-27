@@ -30,7 +30,7 @@ def main() -> int:
     dst.parent.mkdir(parents=True, exist_ok=True)
 
     t0 = time.time()
-    ds = xr.open_dataset(src).load()          # read raw fully into memory
+    ds = xr.open_dataset(src).load()  # read raw fully into memory
     t_read = time.time()
 
     # NaN guard: some rollout raws are all-NaN (e.g. bad nextgems input cases).

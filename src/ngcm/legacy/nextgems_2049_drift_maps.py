@@ -64,7 +64,8 @@ def main():
         rf = C.to_world(out["ref_annual_clim"].sel(level=lev))
         dr = C.to_world(out["drift"].sel(level=lev))
         lon, lat = ng.longitude, ng.latitude
-        tmin = float(min(ng.min(), rf.min())); tmax = float(max(ng.max(), rf.max()))
+        tmin = float(min(ng.min(), rf.min()));
+        tmax = float(max(ng.max(), rf.max()))
         dlim = float(np.nanpercentile(np.abs(dr.values), 99)) or 1.0
 
         fig, axes = plt.subplots(1, 3, figsize=(19, 4.3))
@@ -83,13 +84,17 @@ def main():
         fig.colorbar(m2, ax=axes[2], shrink=0.8, label="drift [K]")
         for ax in axes:
             C.draw_coastlines(ax)
-            ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
-            ax.set_xlim(-180, 180); ax.set_ylim(-90, 90); ax.grid(alpha=0.2)
+            ax.set_xlabel("longitude");
+            ax.set_ylabel("latitude")
+            ax.set_xlim(-180, 180);
+            ax.set_ylim(-90, 90);
+            ax.grid(alpha=0.2)
         fig.suptitle(f"NextGEMS-{YEAR} — mean 10-day T@{lev} hPa drift "
                      f"(Rackow et al. 2024, Fig. 3 style)", y=1.04, fontsize=13)
         fig.tight_layout()
         out_png = FIGDIR / f"nextgems{YEAR}_driftmap_T_L{lev:04d}.png"
-        fig.savefig(out_png, dpi=150, bbox_inches="tight"); plt.close(fig)
+        fig.savefig(out_png, dpi=150, bbox_inches="tight");
+        plt.close(fig)
         print(f"L{lev}: drift global mean {gm:+.3f} K, "
               f"range {float(dr.min()):+.2f}..{float(dr.max()):+.2f} K")
     print(f"done -> {FIGDIR}/")

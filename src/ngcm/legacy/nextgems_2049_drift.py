@@ -37,7 +37,7 @@ def build_drift(levels, truth) -> pd.DataFrame:
                                            f.stem.replace(f"pred_{YEAR}_", "")))
         pred = ds["temperature"].sel(level=levels)
         tru = truth.sel(time=ds["valid_time"].values, method="nearest")
-        tru = tru.assign_coords(time=pred["time"].values)   # align by label
+        tru = tru.assign_coords(time=pred["time"].values)  # align by label
         diff = pred - tru
         mse = C.lat_weighted_mean(diff ** 2)
         bias = C.lat_weighted_mean(diff)
@@ -58,8 +58,8 @@ def build_drift(levels, truth) -> pd.DataFrame:
 
 def aggregate(df) -> pd.DataFrame:
     agg = (df.groupby(["level", "lead_hours"], as_index=False)
-             .agg(mse=("mse", "mean"), bias=("bias", "mean"),
-                  n_init=("init_date", "nunique")))
+           .agg(mse=("mse", "mean"), bias=("bias", "mean"),
+                n_init=("init_date", "nunique")))
     agg["rmse"] = np.sqrt(agg["mse"])
     agg["lead_day"] = agg["lead_hours"] / 24.0
     agg.to_csv(C.OUTDIR / f"nextgems_{YEAR}_drift_yearmean_{C.level_tag()}.csv",
@@ -89,7 +89,8 @@ def main():
         ax_rmse.grid(True, alpha=0.3)
         fig.tight_layout()
         out = FIGDIR / f"nextgems{YEAR}_drift_rmse_bias_L{lev:04d}.png"
-        fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+        fig.savefig(out, dpi=150, bbox_inches="tight");
+        plt.close(fig)
         print(f"L{lev}: day-10 RMSE={a['rmse'].iloc[-1]:.3f} K "
               f"bias={a['bias'].iloc[-1]:+.3f} K")
     print(f"done -> {FIGDIR}/")

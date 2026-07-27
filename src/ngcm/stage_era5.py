@@ -77,7 +77,7 @@ def month_times() -> np.ndarray:
     if end_date:
         cutoff = (pd.Timestamp(end_date) + pd.Timedelta(days=1)).to_datetime64()
         times = times[times < cutoff]
-    limit = int(os.environ.get("ERA5_LIMIT", "0"))   # smoke-test cap
+    limit = int(os.environ.get("ERA5_LIMIT", "0"))  # smoke-test cap
     return times[:limit] if limit > 0 else times
 
 
@@ -95,11 +95,14 @@ def create_part(times, lev, lat, lon) -> netCDF4.Dataset:
     vt.calendar = "proleptic_gregorian"
     vt[:] = netCDF4.date2num(pd.to_datetime(times).to_pydatetime(), units,
                              "proleptic_gregorian")
-    vlev = nc.createVariable("level", "i4", ("level",)); vlev[:] = lev
+    vlev = nc.createVariable("level", "i4", ("level",));
+    vlev[:] = lev
     vlev.units = "hPa"
-    vlat = nc.createVariable("latitude", "f4", ("latitude",)); vlat[:] = lat
+    vlat = nc.createVariable("latitude", "f4", ("latitude",));
+    vlat[:] = lat
     vlat.units = "degrees_north"
-    vlon = nc.createVariable("longitude", "f4", ("longitude",)); vlon[:] = lon
+    vlon = nc.createVariable("longitude", "f4", ("longitude",));
+    vlon[:] = lon
     vlon.units = "degrees_east"
 
     for v in INPUT_VARS:

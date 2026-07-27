@@ -47,7 +47,7 @@ FIGROOT = Path("figures")
 OUTDIR.mkdir(exist_ok=True)
 
 NATIVE_TRUTH_NC = OUTDIR / f"truth_modelgrid_T_native_{YEAR}.nc"
-TRUTH_BATCH = int(os.environ.get("NG_TRUTH_BATCH", "24"))   # time steps / regrid batch
+TRUTH_BATCH = int(os.environ.get("NG_TRUTH_BATCH", "24"))  # time steps / regrid batch
 
 RENAME_3D = {"t": "temperature", "lat": "latitude", "lon": "longitude"}
 
@@ -174,12 +174,12 @@ def ensure_native_truth() -> None:
         return
     print(f"[truth] building {NATIVE_TRUTH_NC} (all native levels, model grid) ...")
     ds = xr.open_dataset(DATA_3D, chunks={"time": TRUTH_BATCH}).rename(RENAME_3D)
-    t = ds["temperature"]                       # (time, level=25, lat, lon)
+    t = ds["temperature"]  # (time, level=25, lat, lon)
     regridder = _build_regridder(t.isel(time=0))
     n = t.sizes["time"]
     slabs = []
     for s in range(0, n, TRUTH_BATCH):
-        sub = t.isel(time=slice(s, s + TRUTH_BATCH)).compute()   # T has no NaN
+        sub = t.isel(time=slice(s, s + TRUTH_BATCH)).compute()  # T has no NaN
         slabs.append(xarray_utils.regrid(sub, regridder))
         print(f"  {min(s + TRUTH_BATCH, n)}/{n}", flush=True)
     truth = xr.concat(slabs, dim="time")

@@ -130,22 +130,22 @@ TRUTH_BATCH = int(os.environ.get("EVAL_TRUTH_BATCH", "24"))
 # ``cmap`` is the field colormap for drift maps (drift itself is always RdBu_r).
 # --------------------------------------------------------------------------- #
 VARIABLES = {
-    "temperature":         dict(short="T", units="K",       nextgems_src="t",
-                                 cmap="RdYlBu_r", label="temperature"),
-    "geopotential":        dict(short="Z", units="m^2/s^2", nextgems_src="z",
-                                 cmap="viridis",  label="geopotential"),
-    "specific_humidity":   dict(short="Q", units="kg/kg",   nextgems_src="q",
-                                 cmap="viridis",  label="specific humidity"),
-    "u_component_of_wind": dict(short="U", units="m/s",      nextgems_src="u",
-                                 cmap="RdBu_r",   label="u-wind"),
-    "v_component_of_wind": dict(short="V", units="m/s",      nextgems_src="v",
-                                 cmap="RdBu_r",   label="v-wind"),
-    "specific_cloud_ice_water_content":    dict(short="CIWC", units="kg/kg",
-                                 nextgems_src="ciwc", cmap="viridis",
-                                 label="cloud ice water content"),
+    "temperature": dict(short="T", units="K", nextgems_src="t",
+                        cmap="RdYlBu_r", label="temperature"),
+    "geopotential": dict(short="Z", units="m^2/s^2", nextgems_src="z",
+                         cmap="viridis", label="geopotential"),
+    "specific_humidity": dict(short="Q", units="kg/kg", nextgems_src="q",
+                              cmap="viridis", label="specific humidity"),
+    "u_component_of_wind": dict(short="U", units="m/s", nextgems_src="u",
+                                cmap="RdBu_r", label="u-wind"),
+    "v_component_of_wind": dict(short="V", units="m/s", nextgems_src="v",
+                                cmap="RdBu_r", label="v-wind"),
+    "specific_cloud_ice_water_content": dict(short="CIWC", units="kg/kg",
+                                             nextgems_src="ciwc", cmap="viridis",
+                                             label="cloud ice water content"),
     "specific_cloud_liquid_water_content": dict(short="CLWC", units="kg/kg",
-                                 nextgems_src="clwc", cmap="viridis",
-                                 label="cloud liquid water content"),
+                                                nextgems_src="clwc", cmap="viridis",
+                                                label="cloud liquid water content"),
 }
 
 # The five core prognostics plotted by default; override with EVAL_VARS
@@ -174,14 +174,14 @@ def selected_variables() -> list[str]:
 # figures/<run>/<region>/<variable>/<family>/.
 # --------------------------------------------------------------------------- #
 REGIONS = {
-    "world":         (-90.0,  90.0, -180.0, 180.0),
-    "africa":        (-37.0,  38.0,  -20.0,  55.0),
-    "europe":        ( 34.0,  72.0,  -25.0,  45.0),
-    "asia":          (  5.0,  78.0,   25.0, 180.0),
-    "north_america": (  7.0,  84.0, -170.0, -52.0),
-    "south_america": (-57.0,  14.0,  -82.0, -34.0),
-    "oceania":       (-50.0,   0.0,  110.0, 180.0),
-    "antarctica":    (-90.0, -60.0, -180.0, 180.0),
+    "world": (-90.0, 90.0, -180.0, 180.0),
+    "africa": (-37.0, 38.0, -20.0, 55.0),
+    "europe": (34.0, 72.0, -25.0, 45.0),
+    "asia": (5.0, 78.0, 25.0, 180.0),
+    "north_america": (7.0, 84.0, -170.0, -52.0),
+    "south_america": (-57.0, 14.0, -82.0, -34.0),
+    "oceania": (-50.0, 0.0, 110.0, 180.0),
+    "antarctica": (-90.0, -60.0, -180.0, 180.0),
 }
 DEFAULT_REGIONS = ["world"]
 CONTINENTS = [r for r in REGIONS if r != "world"]

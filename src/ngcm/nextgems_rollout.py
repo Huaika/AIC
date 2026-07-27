@@ -92,8 +92,8 @@ RENAME = {
 # values up to ~9999) AND the bad footprint drifts slightly across timesteps, so
 # we mask out-of-range values to NaN per timestep and let the regridder's
 # nearest-neighbour fill replace them with the nearest valid ocean value.
-SST_MIN_K, SST_MAX_K = 270.0, 310.0          # seawater freezing .. warmest ocean
-CI_MIN, CI_MAX = 0.0, 1.0001                 # sea-ice fraction (0..1)
+SST_MIN_K, SST_MAX_K = 270.0, 310.0  # seawater freezing .. warmest ocean
+CI_MIN, CI_MAX = 0.0, 1.0001  # sea-ice fraction (0..1)
 
 # NeuralGCM's 37 ERA5 pressure levels (hPa). NextGEMS ships 25 native levels;
 # we linearly interpolate onto these (the model's expected vertical coordinate).
@@ -143,6 +143,7 @@ def _end_str(init_date: str, days: int) -> str:
 
 def run_one(model, regridder, ds3, dss, init_date: str) -> xarray.Dataset:
     """Encode at t0 and unroll a ROLLOUT_DAYS/OUT_H forecast for one init-day."""
+
     def regrid(ds):
         return xarray_utils.fill_nan_with_nearest(xarray_utils.regrid(ds, regridder))
 
@@ -179,7 +180,7 @@ def run_one(model, regridder, ds3, dss, init_date: str) -> xarray.Dataset:
     forcing_rg = regrid_per_time(forcing)
 
     # --- encode + unroll ---
-    steps = ROLLOUT_DAYS * 24 // OUT_H + 1          # +1 so leads run 0..days
+    steps = ROLLOUT_DAYS * 24 // OUT_H + 1  # +1 so leads run 0..days
     lead_h = np.arange(steps) * OUT_H
     timedelta = np.timedelta64(1, "h") * OUT_H
 

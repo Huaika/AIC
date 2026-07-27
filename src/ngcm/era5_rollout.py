@@ -144,10 +144,10 @@ def run_one(model, regridder, ds, init_date: str) -> xarray.Dataset:
         print(f"[{init_date}] forecast runs past data front {data_last}; "
               f"persisting last SST/sea-ice ({forcing.time.values[-2]}) over the tail",
               flush=True)
-    forcing_rg = regrid(forcing)   # ERA5 land mask is static -> single regrid ok
+    forcing_rg = regrid(forcing)  # ERA5 land mask is static -> single regrid ok
 
     # --- encode + unroll ---
-    steps = ROLLOUT_DAYS * 24 // OUT_H + 1          # +1 so leads run 0..days
+    steps = ROLLOUT_DAYS * 24 // OUT_H + 1  # +1 so leads run 0..days
     lead_h = np.arange(steps) * OUT_H
     timedelta = np.timedelta64(1, "h") * OUT_H
 

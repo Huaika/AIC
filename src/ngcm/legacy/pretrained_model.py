@@ -9,11 +9,11 @@ from dinosaur import spherical_harmonic
 from dinosaur import xarray_utils
 import neuralgcm
 
-model_name = 'v1/deterministic_2_8_deg.pkl'  #@param ['v1/deterministic_0_7_deg.pkl', 'v1/deterministic_1_4_deg.pkl', 'v1/deterministic_2_8_deg.pkl', 'v1/stochastic_1_4_deg.pkl', 'v1_precip/stochastic_precip_2_8_deg.pkl', 'v1_precip/stochastic_evap_2_8_deg.pkl'] {type: "string"}
+model_name = 'v1/deterministic_2_8_deg.pkl'  # @param ['v1/deterministic_0_7_deg.pkl', 'v1/deterministic_1_4_deg.pkl', 'v1/deterministic_2_8_deg.pkl', 'v1/stochastic_1_4_deg.pkl', 'v1_precip/stochastic_precip_2_8_deg.pkl', 'v1_precip/stochastic_evap_2_8_deg.pkl'] {type: "string"}
 
 gcs = gcsfs.GCSFileSystem(token='anon')
 with gcs.open(f'gs://neuralgcm/models/{model_name}', 'rb') as f:
-  ckpt = pickle.load(f)
+    ckpt = pickle.load(f)
 
 model = neuralgcm.PressureLevelModel.from_checkpoint(ckpt)
 

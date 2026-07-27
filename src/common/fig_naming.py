@@ -15,20 +15,20 @@ The folder tree is unchanged (figures/<dataset><year>/<months>/<region>/<variabl
 """
 from __future__ import annotations
 
-# 2-4 letter region abbreviations
+# 3 letter region abbreviations
 REGION_ABBR = {
     "world": "wld", "africa": "afr", "europe": "eur", "asia": "asi",
     "north_america": "nam", "south_america": "sam", "oceania": "oce",
     "antarctica": "ant",
 }
 
-# 2-4 letter variable abbreviations
+# 4 letter variable abbreviations
 VAR_ABBR = {
-    "temperature": "temp", "geopotential": "geo", "specific_humidity": "shum",
+    "temperature": "temp", "geopotential": "geop", "specific_humidity": "shum",
     "u_component_of_wind": "uwnd", "v_component_of_wind": "vwnd",
     "specific_cloud_ice_water_content": "ciwc",
     "specific_cloud_liquid_water_content": "clwc",
-    "wind_speed": "wspd",   # derived: sqrt(u^2 + v^2)
+    "wind_speed": "wspd",  # derived: sqrt(u^2 + v^2)
 }
 
 # plot-type token per plot family

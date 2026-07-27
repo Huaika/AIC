@@ -65,8 +65,8 @@ def spaghetti(ax, roll_lev, ref_daily_lev, level, color, every=1):
     for d in sorted(r["init_date"].unique())[::every]:
         g = r[r["init_date"] == d]
         daily = (g.groupby("lead_day_idx")
-                   .agg(vt=("valid_time", "mean"), t=("t_pred_gmean_k", "mean"))
-                   .reset_index())
+                 .agg(vt=("valid_time", "mean"), t=("t_pred_gmean_k", "mean"))
+                 .reset_index())
         ax.plot(daily["vt"], daily["t"], color=color, lw=lw, alpha=alpha, zorder=2)
     cadence = "every day" if every == 1 else f"every {every}th day"
     ax.plot([], [], color=color, lw=1.2, alpha=0.9,
@@ -86,7 +86,7 @@ def main():
 
     # reference daily-mean global T per level, from the model-grid truth cache
     truth = C.truth_at_levels(levels)
-    ref_gm = C.lat_weighted_mean(truth)                    # (time, level)
+    ref_gm = C.lat_weighted_mean(truth)  # (time, level)
     ref = ref_gm.to_dataframe(name="t_ref_gmean_k").reset_index()
     ref["date"] = pd.to_datetime(ref["time"]).dt.floor("D")
     ref = ref.groupby(["date", "level"], as_index=False)["t_ref_gmean_k"].mean()
@@ -102,7 +102,8 @@ def main():
         ax.set_xlabel("Valid time")
         fig.tight_layout()
         out = FIGDIR / f"nextgems{YEAR}_spaghetti_T_L{lev:04d}.png"
-        fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+        fig.savefig(out, dpi=150, bbox_inches="tight");
+        plt.close(fig)
 
         fig, ax = plt.subplots(figsize=(13, 5))
         spaghetti(ax, roll_lev, ref_lev, lev, color, every=1)
@@ -113,7 +114,8 @@ def main():
         ax.set_xlabel("Valid time")
         fig.tight_layout()
         out = FIGDIR / f"nextgems{YEAR}_spaghetti_T_L{lev:04d}_zoom.png"
-        fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+        fig.savefig(out, dpi=150, bbox_inches="tight");
+        plt.close(fig)
         print(f"saved spaghetti L{lev}")
     print(f"done -> {FIGDIR}/")
 
