@@ -17,8 +17,8 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 
-from ngcm import eval_common as C
-from common import fig_naming
+from aic.controller.eval import eval_common as C
+from aic.view import naming as fig_naming
 
 YEAR = C.YEAR
 

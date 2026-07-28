@@ -45,10 +45,10 @@ echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} run=${EVAL_RUN} "\
 "interval=${NG_LEVEL_INTERVAL} levels=${NG_LEVELS:-<interval>} vars=${EVAL_VARS:-<default5>}"
 
 # 1) build the per-variable model-grid truth caches once, single pass (no-op if present)
-"$PY" -c "from ngcm import eval_common as c; c.ensure_native_truth()"
+"$PY" -c "from aic.controller.eval import eval_common as c; c.ensure_native_truth()"
 # 2) all three plot families, each sweeping every requested variable x level
-"$PY" -m ngcm.plots.spaghetti
-"$PY" -m ngcm.plots.drift
-"$PY" -m ngcm.plots.drift_maps
+"$PY" -m aic.view.spaghetti
+"$PY" -m aic.view.drift
+"$PY" -m aic.view.drift_maps
 
 echo "$(date '+%F %T') done run=${EVAL_RUN}"

@@ -17,7 +17,7 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 
-from ngcm.legacy import ng2049_common as C
+from aic.legacy import ng2049_common as C
 
 YEAR = C.YEAR
 FIGDIR = C.figure_dir("drift_stats")

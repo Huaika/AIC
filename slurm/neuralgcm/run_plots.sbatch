@@ -36,8 +36,8 @@ export EVAL_VARS="${VARLIST[$SLURM_ARRAY_TASK_ID]}"
 echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} run=${EVAL_RUN} "\
 "var=${EVAL_VARS} regions=${EVAL_REGIONS:-<world>} levels=${NG_LEVELS:-<interval ${NG_LEVEL_INTERVAL}>}"
 
-"$PY" -m ngcm.plots.spaghetti
-"$PY" -m ngcm.plots.drift
-"$PY" -m ngcm.plots.drift_maps
+"$PY" -m aic.view.spaghetti
+"$PY" -m aic.view.drift
+"$PY" -m aic.view.drift_maps
 
 echo "$(date '+%F %T') done plots run=${EVAL_RUN} var=${EVAL_VARS}"

@@ -17,7 +17,7 @@ import numpy as np
 import xarray as xr
 import matplotlib.pyplot as plt
 
-from ngcm.legacy import ng2049_common as C
+from aic.legacy import ng2049_common as C
 
 YEAR = C.YEAR
 FINAL_DAY_LEAD_MIN = 216

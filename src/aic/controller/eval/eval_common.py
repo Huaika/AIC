@@ -111,8 +111,8 @@ DATASET = CFG["truth_kind"]
 
 # Committed figures live in the repo (outputs/figures/); heavy caches + results
 # live on workspace scratch (out of the repo). Both env-overridable. REPO_ROOT is
-# derived from this file: src/ngcm/eval_common.py -> parents[2] = repo.
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# derived from this file: src/aic/controller/eval/eval_common.py -> parents[4] = repo.
+REPO_ROOT = Path(__file__).resolve().parents[4]
 FIG_ROOT = Path(os.environ.get("EVAL_FIG_ROOT", str(REPO_ROOT / "outputs" / "figures")))
 RESULTS_ROOT = Path(os.environ.get(
     "EVAL_RESULTS_ROOT", f"{WS}/ka_dm9435-ai-climate/eval_results"))

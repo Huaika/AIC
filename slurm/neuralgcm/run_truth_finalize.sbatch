@@ -24,5 +24,5 @@ export EVAL_VARS="${EVAL_VARS:-}"
 : "${EVAL_RUN:?export EVAL_RUN before submitting}"
 
 echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} run=${EVAL_RUN} finalize"
-"$PY" -c "from ngcm import eval_common as c; c.finalize_truth()"
+"$PY" -c "from aic.controller.eval import eval_common as c; c.finalize_truth()"
 echo "$(date '+%F %T') done finalize run=${EVAL_RUN}"

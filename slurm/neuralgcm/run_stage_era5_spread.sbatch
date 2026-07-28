@@ -35,7 +35,7 @@ for spec in "${MONTHS[@]}"; do
   set -- $spec; y=$1; m=$2
   ERA5_YEAR=$y ERA5_MONTH=$m srun --exclusive --ntasks=1 --nodes=1 \
       --output="$LOGDIR/spread_${y}_${m}.log" \
-      "$PY" -m ngcm.stage_era5 &
+      "$PY" -m aic.controller.staging.stage_era5 &
   # keep at most NODES steps in flight -> one per node
   while [ "$(jobs -r | wc -l)" -ge "$NODES" ]; do sleep 5; done
 done

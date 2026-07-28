@@ -37,6 +37,6 @@ T1=$(( T0 + CHUNK_STEPS ))
 echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} run=${EVAL_RUN} "\
 "chunk=${idx} steps=[${T0},${T1}) vars=${EVAL_VARS:-<default5>}"
 
-"$PY" -c "from ngcm import eval_common as c; c.build_truth_chunk(${T0}, ${T1})"
+"$PY" -c "from aic.controller.eval import eval_common as c; c.build_truth_chunk(${T0}, ${T1})"
 
 echo "$(date '+%F %T') done chunk ${idx} run=${EVAL_RUN}"

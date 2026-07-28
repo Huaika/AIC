@@ -45,4 +45,4 @@ echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} array=${SLURM_ARRAY_
 "year=${ERA5_YEAR} init_start=${ERA5_INIT_START} count=${ERA5_INIT_COUNT}"
 nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader || true
 
-exec "$PY" -m ngcm.era5_rollout
+exec "$PY" -m aic.controller.rollout.era5_rollout

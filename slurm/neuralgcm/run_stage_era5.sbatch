@@ -31,4 +31,4 @@ export ERA5_MONTH=$(( i % 12 + 1 ))
 echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} "\
 "array=${SLURM_ARRAY_JOB_ID}:${i} year=${ERA5_YEAR} month=${ERA5_MONTH}"
 
-exec "$PY" -m ngcm.stage_era5
+exec "$PY" -m aic.controller.staging.stage_era5
