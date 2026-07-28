@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=gc-precache-arco
-#SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_precache_logs/%x-%A_%a.log
-#SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_precache_logs/%x-%A_%a.log
+#SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_logs_dm9435/%x-%A_%a.log
+#SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_logs_dm9435/%x-%A_%a.log
 #SBATCH --array=0-354
 # cpu_il (264 nodes) + cpu (80) are QoS 'normal' with no submit cap (the dev_*
 # partitions cap at 4 submitted). Slurm packs several tasks per node; that shares
@@ -38,10 +38,10 @@ set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
 cd "$REPO_ROOT"
-mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_precache_logs
+mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_logs_dm9435
 
 PY="$REPO_ROOT/neural_gcm/.venv/bin/python"
-export PYTHONPATH="$REPO_ROOT/graphcast/inference"
+export PYTHONPATH="$REPO_ROOT/src/graphcast/inference"
 
 export YEAR="${YEAR:-2023}"
 export INIT_HOUR="${INIT_HOUR:-6}"

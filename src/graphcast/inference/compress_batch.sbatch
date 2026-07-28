@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=gc-compress
-#SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_precache_logs/%x-%A_%a.log
-#SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_precache_logs/%x-%A_%a.log
+#SBATCH --output=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_logs_dm9435/%x-%A_%a.log
+#SBATCH --error=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_logs_dm9435/%x-%A_%a.log
 # 4 results/zlib-task (~4x347s = ~23min). Ideally one-per-result, but the QOS
 # per-user submit limit rejects a 355-element array alongside the rollout arrays,
 # so we batch 4/task -> 89 elements (fits the limit). COUNT=1 + --array=0-354 for
@@ -25,7 +25,7 @@
 set -uo pipefail
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"; cd "$REPO_ROOT"
 PY="$REPO_ROOT/neural_gcm/.venv/bin/python"
-export PYTHONPATH="$REPO_ROOT/graphcast/inference"
+export PYTHONPATH="$REPO_ROOT/src/graphcast/inference"
 WS=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate
 
 export YEAR CASE_MODE
@@ -63,7 +63,7 @@ for d in mine:
         print(f"SKIP {d} (final exists)", flush=True); continue
     if not raw.exists():
         print(f"WAIT {d} (raw not ready)", flush=True); continue
-    rc=subprocess.call([sys.executable,"graphcast/inference/compress_pred.py",str(raw),str(fin),str(complevel)])
+    rc=subprocess.call([sys.executable,"src/graphcast/inference/compress_pred.py",str(raw),str(fin),str(complevel)])
     if rc==0 and fin.exists():
         try: raw.unlink()
         except OSError: pass

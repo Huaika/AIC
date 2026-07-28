@@ -548,6 +548,14 @@ def init_times_for_batch(rollout_steps: int, step_hours: int) -> list[str | None
         for s in starts
         if (s + pd.Timedelta(hours=hour) + lead) <= year_end
     ]
+    # For a partial / current year, GRAPHCAST_INIT_END_DATE caps the LAST init to
+    # the ERA5 data front (the rollout needs real ERA5 only at the 2 input steps
+    # <= init; the forecast itself uses astronomically-computed forcings, so it
+    # may run past the front). Mirrors era5_rollout's ERA5_END_DATE. No-op if unset.
+    end = os.environ.get("GRAPHCAST_INIT_END_DATE", "").strip()
+    if end:
+        cutoff = pd.Timestamp(end) + pd.Timedelta(days=1)   # inclusive of the day
+        all_inits = [t for t in all_inits if t < cutoff]
     inits: list[str | None] = [t.strftime("%Y-%m-%dT%H:00") for t in all_inits]
   else:
     inits = [os.environ.get("GRAPHCAST_INIT_TIME")]
