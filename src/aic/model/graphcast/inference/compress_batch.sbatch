@@ -25,7 +25,7 @@
 set -uo pipefail
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"; cd "$REPO_ROOT"
 PY="$REPO_ROOT/neural_gcm/.venv/bin/python"
-export PYTHONPATH="$REPO_ROOT/src/graphcast/inference"
+export PYTHONPATH="$REPO_ROOT/src/aic/model/graphcast/inference"
 WS=/pfs/work9/workspace/scratch/ka_dm9435-ai-climate
 
 export YEAR CASE_MODE
@@ -63,7 +63,7 @@ for d in mine:
         print(f"SKIP {d} (final exists)", flush=True); continue
     if not raw.exists():
         print(f"WAIT {d} (raw not ready)", flush=True); continue
-    rc=subprocess.call([sys.executable,"src/graphcast/inference/compress_pred.py",str(raw),str(fin),str(complevel)])
+    rc=subprocess.call([sys.executable,"src/aic/model/graphcast/inference/compress_pred.py",str(raw),str(fin),str(complevel)])
     if rc==0 and fin.exists():
         try: raw.unlink()
         except OSError: pass

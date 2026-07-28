@@ -37,7 +37,7 @@ PYTHON="${PYTHON:-$REPO_ROOT/neural_gcm/.venv/bin/python}"
 # Set unconditionally (NOT ${PYTHONPATH:-...}): the gate submits with --export=ALL,
 # which propagates its own PYTHONPATH=graphcast/inference and would otherwise shadow
 # gc_extra + graphcast/source, breaking `import graphcast`.
-export PYTHONPATH="/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_extra:$REPO_ROOT/src/graphcast/source:$REPO_ROOT/src/graphcast/inference"
+export PYTHONPATH="/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_extra:$REPO_ROOT/src/aic/model/graphcast/source:$REPO_ROOT/src/aic/model/graphcast/inference"
 export JAX_PLATFORMS="${JAX_PLATFORMS:-cuda}"
 
 # ---- what to run ------------------------------------------------------------
@@ -121,4 +121,4 @@ echo "out=${GRAPHCAST_OUT_DIR}"
 echo "python=${PYTHON}"
 nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader || true
 
-exec "${PYTHON}" src/graphcast/inference/inference_graphcast.py
+exec "${PYTHON}" src/aic/model/graphcast/inference/inference_graphcast.py

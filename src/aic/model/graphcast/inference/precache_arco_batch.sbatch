@@ -41,7 +41,7 @@ cd "$REPO_ROOT"
 mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/gc_logs_dm9435
 
 PY="$REPO_ROOT/neural_gcm/.venv/bin/python"
-export PYTHONPATH="$REPO_ROOT/src/graphcast/inference"
+export PYTHONPATH="$REPO_ROOT/src/aic/model/graphcast/inference"
 
 export YEAR="${YEAR:-2023}"
 export INIT_HOUR="${INIT_HOUR:-6}"
