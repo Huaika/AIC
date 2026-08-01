@@ -11,9 +11,13 @@ Pipeline:
   2. Regrid the target year (2023) to the 2.8 deg grid, crop to the region.
   3. Per cell: hot = T850 > threshold[doy]; z = (T850 - mean[doy]) / std[doy];
      a cell is "affected" on days inside a >= 3-consecutive-hot-day spell.
-  4. GIF: one 1-second frame per day on which any region cell is affected. The
-     WHOLE anomaly field is drawn faint (30% opacity); the currently-affected
-     cells are overdrawn at full opacity so only the active heat wave stands out.
+  4. Keep only days where an AREA fraction >= HW_COVER_FRAC of the region is in a
+     heat wave (scattered single-cell days drop out), then split those days into
+     temporally connected EPISODES -> one 1-second-per-frame GIF each (disconnected
+     heat waves become separate gifs). Every frame: the WHOLE anomaly field faint
+     (30% opacity) with the currently-affected cells overdrawn at full opacity. All
+     frames of all gifs share ONE colour palette, so the gradient/colouring is
+     identical everywhere (no per-frame GIF-palette flicker).
 
 Env: HW_WINDOW (default 5), HW_SPEC_REGION (default europe), HW_YEAR (default 2023).
 Only the region's cells drive the frame list. Coloured by (T-mean)/std (RdBu_r).
@@ -56,6 +60,9 @@ ZLIM = float(os.environ.get("HW_ZLIM", "4.0"))       # colour scale +/- sigma
 # only render days where at least this AREA fraction of the region is in a heat
 # wave, so scattered single-cell days drop out and real episodes stand out.
 COVER_FRAC = float(os.environ.get("HW_COVER_FRAC", "0.10"))
+# temporally disconnected heat waves become SEPARATE gifs; qualifying days whose
+# gap (in days) exceeds this start a new episode (2 -> tolerate a single-day dip).
+EPISODE_GAP = int(os.environ.get("HW_EPISODE_GAP", "2"))
 _COAST_ZARR = "/pfs/work9/workspace/scratch/ka_je2428-nextgems_2049/constant_fields.zarr"
 
 
@@ -234,25 +241,50 @@ def main():
     cover = (active * aw2d[None, :, :]).sum(axis=(1, 2)) / aw2d.sum()
     for thr in (0.05, 0.10, 0.15, 0.20, 0.25):
         print(f"[anim] coverage >= {thr:.0%}: {(cover >= thr).sum()} days", flush=True)
-    days = np.where(cover >= COVER_FRAC)[0]
-    print(f"[anim] {REGION}: {len(days)} frames at coverage >= {COVER_FRAC:.0%} "
-          f"(of {int((cover > 0).sum())} days with any activity) in {YEAR}", flush=True)
-    if len(days) == 0:
+    qual = np.where(cover >= COVER_FRAC)[0]
+    print(f"[anim] {REGION}: {len(qual)} days >= {COVER_FRAC:.0%} coverage "
+          f"(of {int((cover > 0).sum())} active days) in {YEAR}", flush=True)
+    if len(qual) == 0:
         raise SystemExit("no days meet the coverage threshold -> no GIF")
 
-    frames = []
-    for k, t in enumerate(days):
-        frames.append(frame(lon2d, lat2d, z[t], active[t], times[t],
-                            w, e, s, n, REGION, int(active[t].sum()), cover[t]))
-        if k % 10 == 0:
-            print(f"    frame {k+1}/{len(days)} ({times[t].date()}, "
-                  f"{cover[t]:.0%})", flush=True)
+    # group qualifying days into temporally connected EPISODES (each -> its own gif);
+    # an episode spans its first..last qualifying day so its animation is continuous.
+    episodes = [[int(qual[0])]]
+    for d in qual[1:]:
+        (episodes[-1].append(int(d)) if d - episodes[-1][-1] <= EPISODE_GAP
+         else episodes.append([int(d)]))
+    spans = [list(range(ep[0], ep[-1] + 1)) for ep in episodes]
+    print(f"[anim] {len(spans)} disconnected episode(s): " + ", ".join(
+        f"{times[s[0]].date()}..{times[s[-1]].date()} ({len(s)}d)" for s in spans),
+        flush=True)
 
-    out = GIF_DIR / f"heatwave{YEAR}_{REGION}_w{WINDOW}_cover{int(COVER_FRAC*100):02d}.gif"
-    frames[0].save(out, save_all=True, append_images=frames[1:],
-                   duration=1000, loop=0, optimize=True)
-    print(f"[anim] DONE -> {out} ({len(frames)} frames, 1 s each, "
-          f"{out.stat().st_size/1e6:.1f} MB)", flush=True)
+    # render each needed frame ONCE (RGB), keyed by day index
+    need = sorted({t for span in spans for t in span})
+    rgb = {}
+    for k, t in enumerate(need):
+        rgb[t] = frame(lon2d, lat2d, z[t], active[t], times[t],
+                       w, e, s, n, REGION, int(active[t].sum()), cover[t])
+        if k % 10 == 0:
+            print(f"    rendered {k+1}/{len(need)}", flush=True)
+
+    # ONE global palette shared by every frame of every gif -> the gradient/colouring
+    # is identical across all frames (no per-frame GIF-palette flicker).
+    fw, fh = rgb[need[0]].size
+    montage = Image.new("RGB", (fw, fh * len(need)))
+    for i, t in enumerate(need):
+        montage.paste(rgb[t], (0, i * fh))
+    pal = montage.quantize(colors=256, method=Image.MEDIANCUT)
+    quant = {t: rgb[t].quantize(palette=pal, dither=Image.NONE) for t in need}
+
+    for span in spans:
+        fr = [quant[t] for t in span]
+        a, b = times[span[0]].date(), times[span[-1]].date()
+        out = GIF_DIR / f"heatwave{YEAR}_{REGION}_w{WINDOW}_{a}_{b}.gif"
+        fr[0].save(out, save_all=True, append_images=fr[1:], duration=1000, loop=0,
+                   optimize=False, disposal=2)
+        print(f"[anim] wrote {out.name} ({len(fr)} frames, "
+              f"{out.stat().st_size/1e6:.2f} MB)", flush=True)
+    print(f"[anim] DONE -> {len(spans)} GIF(s) in {GIF_DIR}", flush=True)
 
 
 if __name__ == "__main__":
