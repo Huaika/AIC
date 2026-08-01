@@ -15,4 +15,4 @@ PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 export JAX_PLATFORMS=cpu            # regridder loads the NeuralGCM checkpoint (JAX) on CPU
 export HW_DATA_DIR="/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave"
 export HW_FIG_DIR="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/outputs/figures/heatwave2023"
-exec "$PY" -m aic.controller.heatwave_2023_spectrum
+exec "$PY" -m aic.controller.heatwave.spectrum

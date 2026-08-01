@@ -30,4 +30,4 @@ export HW_OUT_DIR="${HW_OUT_DIR:-/pfs/work9/workspace/scratch/ka_dm9435-ai-clima
 echo "$(date '+%F %T') host=$(hostname) job=${SLURM_JOB_ID} "\
 "array=${SLURM_ARRAY_JOB_ID}:${SLURM_ARRAY_TASK_ID} year=${HW_YEAR} "\
 "level=${HW_LEVEL} cadence=${HW_CADENCE}h region=${HW_REGION}"
-exec "$PY" -m aic.controller.staging.stage_era5_heatwave
+exec "$PY" -m aic.controller.heatwave.staging

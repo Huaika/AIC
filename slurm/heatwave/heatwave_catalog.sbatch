@@ -16,4 +16,4 @@ export HW_REGIONS="${HW_REGIONS:-europe north_america asia africa oceania south_
 export HW_Q="${HW_Q:-0.95}"; export HW_WINDOW="${HW_WINDOW:-5}"
 export HW_DATA_DIR="/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave"
 export HW_CATALOG_DIR="/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_catalog"
-exec "$PY" -m aic.controller.heatwave
+exec "$PY" -m aic.controller.heatwave.framework

@@ -13,4 +13,4 @@ cd /pfs/data6/home/ka/ka_iti/ka_dm9435/code
 mkdir -p /pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_logs
 PY="/pfs/data6/home/ka/ka_iti/ka_dm9435/code/neural_gcm/.venv/bin/python"
 export HW_DATA_DIR="/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave"
-exec "$PY" -m aic.controller.heatwave_2023_test
+exec "$PY" -m aic.controller.heatwave.window_sweep
