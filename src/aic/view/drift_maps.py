@@ -1,138 +1,129 @@
 #!/usr/bin/env python
-"""10-day drift maps (Rackow et al. 2024 Fig. 3 style) -- RUN/VARIABLE/REGION-agnostic.
+"""10-day drift maps (Rackow et al. 2024 Fig. 3 style) -- multi-source aware.
 
-drift = annual-mean of the model's day-10 fields minus the reference annual mean:
-  ngcm_day10_clim = mean over inits of the rollout's final-day mean (216..240 h)
-  ref_clim        = reference annual-mean field
-  drift           = ngcm_day10_clim - ref_clim   (model grid)
-Three panels per (region, variable, level): NeuralGCM day-10 clim, reference, drift.
+drift = annual-(or month-)mean of the model's day-10 fields minus the reference
+mean:
+  fc_day10_clim = mean over inits of the rollout's final-day mean (216..240 h)
+  ref_clim      = reference mean field
+  drift         = fc_day10_clim - ref_clim   (model grid)
 
-The clim/drift fields are GLOBAL and cached once per (run, variable); each region
-is just that global field CROPPED to the region's box (no recompute). Run via
-EVAL_RUN, variables via EVAL_VARS, regions via EVAL_REGIONS. Output:
-figures/<run>/<region>/<variable>/drift_maps/.
+Single source: three panels (forecast day-10 clim | reference | drift) --
+byte-identical name/paths to before. Multiple sources
+(EVAL_SOURCES=neuralgcm,graphcast + EVAL_YEAR): one forecast panel per source +
+one shared reference panel + one drift panel per source, i.e.
+  [ NGCM fc | GC fc | ERA5 truth | NGCM drift | GC drift ]
+Each source uses its OWN grid (NeuralGCM 2.8deg / GraphCast 0.25deg), so panels
+may differ in resolution; the reference panel is drawn from the first source.
+
+Output: figures/<run-or-compare>/<period>/<region>/<variable>/drift_maps/.
 """
 from __future__ import annotations
 
 import numpy as np
-import xarray as xr
 import matplotlib.pyplot as plt
 
 from aic.controller.eval import eval_common as C
+from aic.controller.eval import sources as S
 from aic.view import naming as fig_naming
 
-YEAR = C.YEAR
-FINAL_DAY_LEAD_MIN = 216
+
+def _panel(ax, field, cmap, vmin, vmax, title, w, e, s, n, cbar_label, fig):
+    lon, lat = field.longitude, field.latitude
+    m = ax.pcolormesh(lon, lat, field, cmap=cmap, vmin=vmin, vmax=vmax, shading="auto")
+    ax.set_title(title, fontsize=10)
+    fig.colorbar(m, ax=ax, shrink=0.8, label=cbar_label)
+    C.draw_coastlines(ax)
+    ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
+    ax.set_xlim(w, e); ax.set_ylim(s, n); ax.grid(alpha=0.2)
 
 
-def build_fields(var, short, levels, truth, period) -> xr.Dataset | None:
-    """Day-10 clim / reference clim / drift fields for a period, cached per
-    (run, var, period). period 0 = entire year (reuses the existing annual cache
-    name); month m = mean over that month's init-days only (truth restricted to
-    month m). Returns None if the period has no init-days."""
-    suffix = "" if period == 0 else f"_{period:02d}"
-    nc = C.OUTDIR / f"{C.RUN}_drift_maps_{short}{suffix}_{C.level_tag()}.nc"
-    if nc.exists():
-        print(f"[maps] cached {nc}")
-        return xr.open_dataset(nc)
-
-    files = sorted(C.PRED_DIR.glob(f"pred_{YEAR}_*.nc"))
-    if period == 0:
-        ref_clim = truth.mean("time")
-    else:
-        files = [f for f in files if C.pred_init_month(f) == period]
-        mask = (truth["time"].dt.month == period).values
-        ref_clim = truth.isel(time=mask).mean("time")
-    if not files:
-        print(f"[maps] no init-days for {C.period_dir_name(period)}; skip")
-        return None
-    ref_clim = ref_clim.transpose("level", "latitude", "longitude")
-    print(f"[maps] {C.period_dir_name(period)}: end-of-forecast mean over "
-          f"{len(files)} rollouts ({var}), {len(levels)} levels")
-    acc, n = None, 0
-    for i, f in enumerate(files):
-        ds = xr.open_dataset(f)
-        t = ds[var].sel(level=levels)
-        end = t.where(ds["lead_hours"] >= FINAL_DAY_LEAD_MIN, drop=True).mean("time")
-        end = end.transpose("level", "latitude", "longitude")
-        acc = end if acc is None else acc + end
-        n += 1
-        ds.close()
-        if i % 50 == 0 or i == len(files) - 1:
-            print(f"  {i + 1}/{len(files)}")
-    ngcm = acc / n
-    out = xr.Dataset({"ngcm_day10_clim": ngcm, "ref_annual_clim": ref_clim,
-                      "drift": ngcm - ref_clim})
-    out.attrs.update(n_inits=n, final_day_lead_min_h=FINAL_DAY_LEAD_MIN,
-                     variable=var, period=C.period_dir_name(period),
-                     drift_def=f"mean(end-of-10day-forecast) - {C.REF_LABEL} mean")
-    out.to_netcdf(nc)
-    print(f"[maps] wrote {nc}")
-    return out
-
-
-def plot_period_region(out, var, short, units, label, fcmap, levels, period, reg):
-    figdir = C.figure_dir(period, reg, var, "drift_maps")
+def plot_period_region(fields, sources, var, short, units, label, fcmap,
+                       levels, period, reg):
+    """fields: {run: xr.Dataset(fc_day10_clim, ref_clim, drift)} per source."""
+    figdir = S.figure_dir(sources, period, reg, var, "drift_maps")
     w, e, s, n_ = C.region_extent(reg)
     area = "global" if reg == "world" else reg
+    ref_src = sources[0]
     for lev in levels:
-        ng = C.select_region(out["ngcm_day10_clim"].sel(level=lev), reg)
-        rf = C.select_region(out["ref_annual_clim"].sel(level=lev), reg)
-        dr = C.select_region(out["drift"].sel(level=lev), reg)
-        lon, lat = ng.longitude, ng.latitude
-        vmin = float(min(ng.min(), rf.min())); vmax = float(max(ng.max(), rf.max()))
-        dlim = float(np.nanpercentile(np.abs(dr.values), 99)) or 1.0
+        fcs = {r: C.select_region(fields[r]["fc_day10_clim"].sel(level=lev), reg)
+               for r in fields}
+        drs = {r: C.select_region(fields[r]["drift"].sel(level=lev), reg)
+               for r in fields}
+        rf = C.select_region(fields[ref_src.run]["ref_clim"].sel(level=lev), reg)
 
-        fig, axes = plt.subplots(1, 3, figsize=(19, 4.3))
-        m0 = axes[0].pcolormesh(lon, lat, ng, cmap=fcmap, vmin=vmin, vmax=vmax,
-                                shading="auto")
-        axes[0].set_title(f"NeuralGCM day-10 climatology\n(mean of {out.attrs['n_inits']} forecasts)")
-        fig.colorbar(m0, ax=axes[0], shrink=0.8, label=f"{label} [{units}]")
-        m1 = axes[1].pcolormesh(lon, lat, rf, cmap=fcmap, vmin=vmin, vmax=vmax,
-                                shading="auto")
-        axes[1].set_title(f"{C.REF_LABEL} reference mean\n(reference)")
-        fig.colorbar(m1, ax=axes[1], shrink=0.8, label=f"{label} [{units}]")
-        m2 = axes[2].pcolormesh(lon, lat, dr, cmap="RdBu_r", vmin=-dlim, vmax=dlim,
-                                shading="auto")
-        gm = float(dr.weighted(np.cos(np.deg2rad(lat))).mean(["longitude", "latitude"]))
-        axes[2].set_title(f"10-day drift = NeuralGCM − {C.REF_LABEL}\n({area} mean {gm:+.4g} {units})")
-        fig.colorbar(m2, ax=axes[2], shrink=0.8, label=f"drift [{units}]")
-        for ax in axes:
-            C.draw_coastlines(ax)
-            ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
-            ax.set_xlim(w, e); ax.set_ylim(s, n_); ax.grid(alpha=0.2)
-        fig.suptitle(f"{C.REF_LABEL} — mean 10-day {label}@{lev} hPa drift, {area} "
-                     f"(Rackow et al. 2024, Fig. 3 style)", y=1.04, fontsize=13)
+        # shared field colour scale over all forecasts + the reference
+        allf = list(fcs.values()) + [rf]
+        vmin = float(min(f.min() for f in allf))
+        vmax = float(max(f.max() for f in allf))
+        dlim = max((float(np.nanpercentile(np.abs(d.values), 99)) for d in drs.values()),
+                   default=1.0) or 1.0
+
+        npan = 2 * len(sources) + 1
+        fig, axes = plt.subplots(1, npan, figsize=(6.3 * npan, 4.3), squeeze=False)
+        axes = axes[0]
+        col = 0
+        for src in sources:  # forecast panels
+            ninit = int(fields[src.run].attrs.get("n_inits", 0))
+            _panel(axes[col], fcs[src.run], fcmap, vmin, vmax,
+                   f"{src.pretty} day-10 climatology\n(mean of {ninit} forecasts)",
+                   w, e, s, n_, f"{label} [{units}]", fig)
+            col += 1
+        _panel(axes[col], rf, fcmap, vmin, vmax,  # shared reference panel
+               f"{ref_src.ref_label} reference mean", w, e, s, n_,
+               f"{label} [{units}]", fig)
+        col += 1
+        for src in sources:  # drift panels
+            dr = drs[src.run]
+            gm = float(dr.weighted(np.cos(np.deg2rad(dr.latitude)))
+                       .mean(["longitude", "latitude"]))
+            _panel(axes[col], dr, "RdBu_r", -dlim, dlim,
+                   f"{src.pretty} drift = fc − {ref_src.ref_label}\n"
+                   f"({area} mean {gm:+.4g} {units})",
+                   w, e, s, n_, f"drift [{units}]", fig)
+            col += 1
+
+        models = " vs ".join(dict.fromkeys(x.pretty for x in sources))
+        fig.suptitle(f"{ref_src.ref_label} — mean 10-day {label}@{lev} hPa drift, "
+                     f"{area} ({models}, Rackow et al. 2024 Fig. 3 style)",
+                     y=1.04, fontsize=13)
         fig.tight_layout()
-        out_png = figdir / fig_naming.figure_name(
-            C.MODEL, C.DATASET, reg, var, lev, C.YEAR,
+        out = figdir / fig_naming.figure_name(
+            S.model_token(sources), ref_src.dataset, reg, var, lev, ref_src.year,
             fig_naming.months_token(period), "drift_maps")
-        fig.savefig(out_png, dpi=150, bbox_inches="tight"); plt.close(fig)
+        fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
 
 
-def plot_variable(var, levels, regions, periods):
+def plot_variable(sources, var, levels, regions, periods):
     meta = C.VARIABLES[var]
     short, units, label, fcmap = (meta["short"], meta["units"],
                                   meta["label"], meta["cmap"])
     print(f"=== drift maps: {var} ({short}) ===")
-    truth = C.truth_at_levels(var, levels)
     for period in periods:
-        out = build_fields(var, short, levels, truth, period)
-        if out is None:
+        fields = {}
+        for s in sources:
+            out = s.day10_fields(var, short, levels, period)
+            if out is not None:
+                fields[s.run] = out
+        if not fields:
             continue
+        # keep only sources that actually produced fields, preserving order
+        srcs = [s for s in sources if s.run in fields]
         for reg in regions:
-            plot_period_region(out, var, short, units, label, fcmap, levels, period, reg)
-        out.close()
+            plot_period_region(fields, srcs, var, short, units, label, fcmap,
+                               C.render_levels(levels), period, reg)
+        for out in fields.values():
+            out.close()
         print(f"  saved {C.period_dir_name(period)} x {len(regions)} region(s)")
 
 
 def main():
-    levels = C.requested_levels()
+    sources = S.resolve_sources()
+    levels = S.requested_levels(sources)
     regions = C.selected_regions()
     periods = C.selected_periods()
     for var in C.selected_variables():
-        plot_variable(var, levels, regions, periods)
-    print(f"done -> {C.FIGROOT}/<period>/<region>/<variable>/drift_maps/")
+        plot_variable(sources, var, levels, regions, periods)
+    print(f"done -> {C.FIG_ROOT}/{S.run_label(sources)}/<period>/<region>/<variable>/drift_maps/")
 
 
 if __name__ == "__main__":

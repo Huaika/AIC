@@ -1,64 +1,32 @@
 #!/usr/bin/env python
-"""Spaghetti plots (Rackow et al. 2024 Fig. 1 style) -- RUN/VARIABLE/REGION-agnostic.
+"""Spaghetti plots (Rackow et al. 2024 Fig. 1 style) -- multi-source aware.
 
-Continuous reference daily-mean area-mean field (thick black) + one thin 10-day/6 h
-rollout line per init-day (collapsed to per-day means), per requested pressure
-level. One full-year figure per (region, variable, level).
+Continuous reference daily-mean area-mean field (thick black) + one thin 10-day/
+6 h rollout line per init-day (collapsed to per-day means) FOR EACH forecast
+source, per requested pressure level. One figure per (region, variable, level).
 
-Run via EVAL_RUN; variables via EVAL_VARS; regions via EVAL_REGIONS (default
-world). All requested regions are computed in ONE pass over the prediction files
-(region is a column in the cached CSV). Output:
-figures/<run>/<region>/<variable>/spaghetti/.
+Sources are selected via EVAL_SOURCES (+ EVAL_YEAR), e.g.
+    EVAL_SOURCES=neuralgcm,graphcast EVAL_YEAR=2023   # overlay both models
+Unset EVAL_SOURCES -> single source from EVAL_RUN (historical behaviour, and the
+figure name/paths are byte-identical to before). Variables via EVAL_VARS, regions
+via EVAL_REGIONS (default world), periods via EVAL_MONTHS.
+Output: figures/<run-or-compare>/<period>/<region>/<variable>/spaghetti/.
 """
 from __future__ import annotations
 
 import pandas as pd
-import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 from aic.controller.eval import eval_common as C
+from aic.controller.eval import sources as S
 from aic.view import naming as fig_naming
 
-YEAR = C.YEAR
 
-
-def build_rollout_gmean(var, short, levels, regions) -> pd.DataFrame:
-    csv = C.OUTDIR / f"{C.RUN}_rollout_gmean_{short}_{C.level_tag()}.csv"
-    if csv.exists():
-        df = pd.read_csv(csv, parse_dates=["init_date"])
-        if "region" in df.columns and set(regions) <= set(df["region"].unique()):
-            print(f"[rollout] cached {csv}")
-            return df
-        print(f"[rollout] cache {csv} missing regions -> recompute")
-    files = sorted(C.PRED_DIR.glob(f"pred_{YEAR}_*.nc"))
-    print(f"[rollout] area-mean {var} at {len(levels)} levels, {len(regions)} "
-          f"region(s), from {len(files)} files")
-    rows = []
-    for i, f in enumerate(files):
-        ds = xr.open_dataset(f)
-        init = pd.to_datetime(ds.attrs.get("init_date",
-                                           f.stem.replace(f"pred_{YEAR}_", "")))
-        da = ds[var].sel(level=levels).compute()
-        lead_h = ds["lead_hours"].values.astype(int)
-        for reg in regions:
-            gm = C.lat_weighted_mean(C.select_region(da, reg))
-            for lev in levels:
-                rows.append(pd.DataFrame({
-                    "init_date": init, "lead_hours": lead_h, "level": lev,
-                    "region": reg, "pred_gmean": gm.sel(level=lev).values}))
-        ds.close()
-        if i % 50 == 0 or i == len(files) - 1:
-            print(f"  {i + 1}/{len(files)}")
-    df = pd.concat(rows, ignore_index=True)
-    df.to_csv(csv, index=False)
-    print(f"[rollout] wrote {csv}")
-    return df
-
-
-def build_ref(var, levels, regions) -> pd.DataFrame:
-    """Reference daily area-mean per region, as a tidy frame."""
-    truth = C.truth_at_levels(var, levels)
+def build_ref(source, var, levels, regions) -> pd.DataFrame:
+    """Reference daily area-mean per region, as a tidy frame (from one source's
+    own-grid truth -- the overlay draws a single reference line)."""
+    truth = source.truth_at_levels(var, levels)
     frames = []
     for reg in regions:
         ref_gm = C.lat_weighted_mean(C.select_region(truth, reg))
@@ -70,14 +38,11 @@ def build_ref(var, levels, regions) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-def spaghetti(ax, roll_lev, ref_daily_lev, level, color, label, units, region, every=1):
+def _draw_bundle(ax, roll_lev, color, label, every=1):
+    """One forecast source's thin rollout lines (per init-day, daily-mean)."""
     r = roll_lev.copy()
     r["valid_time"] = r["init_date"] + pd.to_timedelta(r["lead_hours"], unit="h")
     r["lead_day_idx"] = (r["lead_hours"] // 24).astype(int)
-
-    ax.plot(ref_daily_lev["date"], ref_daily_lev["ref_gmean"],
-            color="black", lw=2.2, zorder=1, label=f"{C.REF_LABEL} (daily mean)")
-
     lw, alpha = (0.5, 0.5) if every == 1 else (0.9, 0.8)
     for d in sorted(r["init_date"].unique())[::every]:
         g = r[r["init_date"] == d]
@@ -85,61 +50,70 @@ def spaghetti(ax, roll_lev, ref_daily_lev, level, color, label, units, region, e
                    .agg(vt=("valid_time", "mean"), val=("pred_gmean", "mean"))
                    .reset_index())
         ax.plot(daily["vt"], daily["val"], color=color, lw=lw, alpha=alpha, zorder=2)
-    cadence = "every day" if every == 1 else f"every {every}th day"
-    ax.plot([], [], color=color, lw=1.2, alpha=0.9,
-            label=f"NeuralGCM 10-day rollout, daily mean ({cadence})")
-    area = "global" if region == "world" else region
-    ax.set_title(f"{area.capitalize()}-mean {label} at {level} hPa — {C.REF_LABEL}")
-    ax.set_ylabel(f"{label} @{level}hPa {area} mean [{units}]")
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
-    ax.xaxis.set_major_locator(mdates.MonthLocator())
-    ax.margins(x=0.01)
-    ax.grid(alpha=0.25)
-    ax.legend(loc="upper left", framealpha=0.9)
+    ax.plot([], [], color=color, lw=1.4, alpha=0.9, label=label)  # legend proxy
 
 
-def plot_variable(var, levels, regions, periods):
+def plot_variable(sources, var, levels, regions, periods):
     meta = C.VARIABLES[var]
     short, units, label = meta["short"], meta["units"], meta["label"]
     print(f"=== spaghetti: {var} ({short}) ===")
-    roll = build_rollout_gmean(var, short, levels, regions)
-    ref = build_ref(var, levels, regions)
-    roll["_m"] = roll["init_date"].dt.month
+    ref_src = sources[0]
+    rolls = {s.run: s.rollout_gmean(var, short, levels, regions) for s in sources}
+    ref = build_ref(ref_src, var, levels, regions)
+    for df in rolls.values():
+        df["_m"] = df["init_date"].dt.month
     ref["_m"] = pd.to_datetime(ref["date"]).dt.month
 
-    cmap = plt.get_cmap("turbo")
     for period in periods:
-        roll_p = roll if period == 0 else roll[roll["_m"] == period]
         ref_p = ref if period == 0 else ref[ref["_m"] == period]
-        if roll_p.empty:
+        rolls_p = {run: (df if period == 0 else df[df["_m"] == period])
+                   for run, df in rolls.items()}
+        if all(df.empty for df in rolls_p.values()):
             print(f"  [skip] no init-days in {C.period_dir_name(period)}")
             continue
         for reg in regions:
-            figdir = C.figure_dir(period, reg, var, "spaghetti")
-            roll_r = roll_p[roll_p["region"] == reg]
+            figdir = S.figure_dir(sources, period, reg, var, "spaghetti")
             ref_r = ref_p[ref_p["region"] == reg]
-            for k, lev in enumerate(C.render_levels(levels)):
-                color = cmap(k / max(1, len(levels) - 1))
-                roll_lev = roll_r[roll_r["level"] == lev]
+            area = "global" if reg == "world" else reg
+            for lev in C.render_levels(levels):
                 ref_lev = ref_r[ref_r["level"] == lev].sort_values("date")
                 fig, ax = plt.subplots(figsize=(13, 5))
-                spaghetti(ax, roll_lev, ref_lev, lev, color, label, units, reg, every=1)
+                ax.plot(ref_lev["date"], ref_lev["ref_gmean"], color="black",
+                        lw=2.2, zorder=1, label=f"{ref_src.ref_label} (daily mean)")
+                for s in sources:
+                    roll_lev = rolls_p[s.run]
+                    roll_lev = roll_lev[(roll_lev["region"] == reg)
+                                        & (roll_lev["level"] == lev)]
+                    if roll_lev.empty:
+                        continue
+                    _draw_bundle(ax, roll_lev, s.color,
+                                 f"{s.pretty} 10-day rollout (daily mean)")
+                ax.set_title(f"{area.capitalize()}-mean {label} at {lev} hPa "
+                             f"— {ref_src.ref_label}")
+                ax.set_ylabel(f"{label} @{lev}hPa {area} mean [{units}]")
                 ax.set_xlabel("Valid time")
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+                ax.xaxis.set_major_locator(mdates.MonthLocator())
+                ax.margins(x=0.01)
+                ax.grid(alpha=0.25)
+                ax.legend(loc="upper left", framealpha=0.9)
                 fig.tight_layout()
                 out = figdir / fig_naming.figure_name(
-                    C.MODEL, C.DATASET, reg, var, lev, C.YEAR,
-                    fig_naming.months_token(period), "spaghetti", ext="pdf")
+                    S.model_token(sources), ref_src.dataset, reg, var, lev,
+                    ref_src.year, fig_naming.months_token(period), "spaghetti",
+                    ext="pdf")
                 fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
         print(f"  saved {C.period_dir_name(period)} x {len(regions)} region(s)")
 
 
 def main():
-    levels = C.requested_levels()
+    sources = S.resolve_sources()
+    levels = S.requested_levels(sources)
     regions = C.selected_regions()
     periods = C.selected_periods()
     for var in C.selected_variables():
-        plot_variable(var, levels, regions, periods)
-    print(f"done -> {C.FIGROOT}/<period>/<region>/<variable>/spaghetti/")
+        plot_variable(sources, var, levels, regions, periods)
+    print(f"done -> {C.FIG_ROOT}/{S.run_label(sources)}/<period>/<region>/<variable>/spaghetti/")
 
 
 if __name__ == "__main__":

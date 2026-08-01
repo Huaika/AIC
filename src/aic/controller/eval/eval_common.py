@@ -95,9 +95,30 @@ RUNS = {
     ),
 }
 
-RUN = os.environ.get("EVAL_RUN", "").strip()
+def _resolve_run() -> str:
+    """Active RUN for the module globals. EVAL_RUN wins; otherwise (multi-source
+    plotting) derive it from EVAL_SOURCES' FIRST model + EVAL_YEAR + EVAL_DATASET
+    so C.OUTDIR/FIGROOT/MODEL/... still resolve to a valid representative run."""
+    run = os.environ.get("EVAL_RUN", "").strip()
+    if run:
+        return run
+    srcs = os.environ.get("EVAL_SOURCES", "").strip()
+    if srcs:
+        model = srcs.replace(",", " ").split()[0].strip()
+        dataset = os.environ.get("EVAL_DATASET", "era5").strip()
+        year = int(os.environ.get("EVAL_YEAR", "0") or 0)
+        for r, cfg in RUNS.items():
+            m = "graphcast" if r.startswith("graphcast") else "neuralgcm"
+            if m == model and cfg["truth_kind"] == dataset and int(cfg["year"]) == year:
+                return r
+    return run  # empty -> falls through to the error below
+
+
+RUN = _resolve_run()
 if RUN not in RUNS:
-    raise SystemExit(f"set EVAL_RUN to one of {list(RUNS)} (got {RUN!r})")
+    raise SystemExit(
+        f"set EVAL_RUN to one of {list(RUNS)} (got {RUN!r}) -- or, for a "
+        f"multi-source overlay, set EVAL_SOURCES + EVAL_YEAR (+ EVAL_DATASET).")
 CFG = RUNS[RUN]
 YEAR = CFG["year"]
 REF_LABEL = CFG["ref_label"]
