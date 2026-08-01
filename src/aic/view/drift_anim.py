@@ -5,7 +5,8 @@ Each frame is one day v of the month: the day-10 NeuralGCM forecast field valid
 on v (from the rollout initialized v-10 days earlier) MINUS the ERA5 truth on v
 -- i.e. the day-10 forecast error map for that day. The colour scale is held
 FIXED across the whole month (computed in a first pass). GIF at 2 fps (0.5 s per
-frame).
+frame). All frames share ONE palette (aic.view.gif_utils) so the colouring is
+consistent across the animation (no per-frame GIF-palette flicker).
 
 Variables / levels: temperature @ 850 hPa, geopotential @ 500 hPa, and wind speed
 sqrt(u^2 + v^2) @ 850 hPa (u,v combined per frame). Region: europe only.
@@ -28,6 +29,7 @@ from PIL import Image
 
 from aic.controller.eval import eval_common as C
 from aic.view import naming as fig_naming
+from aic.view.gif_utils import shared_palette, quantize, save_gif
 
 YEAR = C.YEAR
 FINAL_LEAD_H = 240          # day-10
@@ -136,8 +138,9 @@ def _animate(var: str, level: int, kind: str, month: int):
     out = figdir / fig_naming.figure_name(
         C.MODEL, C.DATASET, REGION, var, level, C.YEAR,
         fig_naming.months_token(month), "drift-map-anim", ext="gif")
-    images[0].save(out, save_all=True, append_images=images[1:],
-                   duration=int(1000 / FPS), loop=0)
+    # one shared palette for the whole animation -> consistent colouring, no flicker
+    pal = shared_palette(images)
+    save_gif([quantize(im, pal) for im in images], out, duration=int(1000 / FPS))
     print(f"  saved {out.name} ({len(frames)} frames, field {vmin:.4g}..{vmax:.4g}, "
           f"dlim={dlim:.4g} {units})")
 
