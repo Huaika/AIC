@@ -19,4 +19,5 @@ export HW_GIF_DIR="/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_gi
 export HW_WINDOW="${HW_WINDOW:-5}"             # best-performing window
 export HW_SPEC_REGION="${HW_SPEC_REGION:-europe}"
 export HW_YEAR="${HW_YEAR:-2023}"
+export HW_COVER_FRAC="${HW_COVER_FRAC:-0.10}"   # min region-area fraction/day
 exec "$PY" -m aic.view.heatwave_anim

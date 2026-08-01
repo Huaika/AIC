@@ -53,6 +53,9 @@ Q = float(os.environ.get("HW_Q", "0.95"))
 MODEL_NAME = "v1/deterministic_2_8_deg.pkl"
 REGRID_BATCH = int(os.environ.get("HW_REGRID_BATCH", "300"))
 ZLIM = float(os.environ.get("HW_ZLIM", "4.0"))       # colour scale +/- sigma
+# only render days where at least this AREA fraction of the region is in a heat
+# wave, so scattered single-cell days drop out and real episodes stand out.
+COVER_FRAC = float(os.environ.get("HW_COVER_FRAC", "0.10"))
 _COAST_ZARR = "/pfs/work9/workspace/scratch/ka_je2428-nextgems_2049/constant_fields.zarr"
 
 
@@ -174,7 +177,8 @@ def draw_coast(ax):
         pass
 
 
-def frame(lon2d, lat2d, z_day, active_day, date, w, e, s, n, region, nactive):
+def frame(lon2d, lat2d, z_day, active_day, date, w, e, s, n, region, nactive,
+          cover_frac):
     fig, ax = plt.subplots(figsize=(6.4, 5.2))
     norm = Normalize(-ZLIM, ZLIM)
     cmap = "RdBu_r"
@@ -187,8 +191,8 @@ def frame(lon2d, lat2d, z_day, active_day, date, w, e, s, n, region, nactive):
     ax.set_xlim(w, e); ax.set_ylim(s, n)
     ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
     ax.set_title(f"{region.title()} heat waves {date.date()}\n"
-                 f"$\\pm${WINDOW}-day window, {nactive} cells in heat wave",
-                 fontsize=11)
+                 f"$\\pm${WINDOW}-day window · {cover_frac:.0%} of region in heat "
+                 f"wave ({nactive} cells)", fontsize=10.5)
     cb = fig.colorbar(m, ax=ax, shrink=0.85)
     cb.set_label("T$_{850}$ anomaly  (σ from 1991-2020 daily mean)")
     fig.tight_layout()
@@ -224,21 +228,27 @@ def main():
     w, e, s, n = region_extent(REGION)
 
     active, z = active_and_z(vals, times, clim)
-    day_has = active.any(axis=(1, 2))
-    days = np.where(day_has)[0]
-    print(f"[anim] {REGION}: {len(days)} days with an active heat wave in {YEAR}",
-          flush=True)
+    # area-weighted coverage per day (cos-lat), fraction of the region in a heat wave
+    aw = np.cos(np.deg2rad(latc))
+    aw2d = np.repeat(aw[:, None], vals.shape[2], axis=1)          # (Yc, Xc)
+    cover = (active * aw2d[None, :, :]).sum(axis=(1, 2)) / aw2d.sum()
+    for thr in (0.05, 0.10, 0.15, 0.20, 0.25):
+        print(f"[anim] coverage >= {thr:.0%}: {(cover >= thr).sum()} days", flush=True)
+    days = np.where(cover >= COVER_FRAC)[0]
+    print(f"[anim] {REGION}: {len(days)} frames at coverage >= {COVER_FRAC:.0%} "
+          f"(of {int((cover > 0).sum())} days with any activity) in {YEAR}", flush=True)
     if len(days) == 0:
-        raise SystemExit("no active heat-wave days -> no GIF")
+        raise SystemExit("no days meet the coverage threshold -> no GIF")
 
     frames = []
     for k, t in enumerate(days):
         frames.append(frame(lon2d, lat2d, z[t], active[t], times[t],
-                            w, e, s, n, REGION, int(active[t].sum())))
+                            w, e, s, n, REGION, int(active[t].sum()), cover[t]))
         if k % 10 == 0:
-            print(f"    frame {k+1}/{len(days)} ({times[t].date()})", flush=True)
+            print(f"    frame {k+1}/{len(days)} ({times[t].date()}, "
+                  f"{cover[t]:.0%})", flush=True)
 
-    out = GIF_DIR / f"heatwave{YEAR}_{REGION}_w{WINDOW}.gif"
+    out = GIF_DIR / f"heatwave{YEAR}_{REGION}_w{WINDOW}_cover{int(COVER_FRAC*100):02d}.gif"
     frames[0].save(out, save_all=True, append_images=frames[1:],
                    duration=1000, loop=0, optimize=True)
     print(f"[anim] DONE -> {out} ({len(frames)} frames, 1 s each, "
