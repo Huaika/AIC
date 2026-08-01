@@ -112,8 +112,44 @@ def load_regridded(files, regridder):
             reg["latitude"].values, reg["longitude"].values)
 
 
-def build_or_load_clim(regridder):
-    """Cached per-doy (threshold, mean, std) on the 2.8 deg grid, 1991-2020."""
+_REGRIDDER = None
+
+
+def _get_regridder(sample_file):
+    global _REGRIDDER
+    if _REGRIDDER is None:
+        with xr.open_dataset(sample_file) as ds0:
+            _REGRIDDER = build_regridder(ds0["temperature"].isel(time=0))
+    return _REGRIDDER
+
+
+def regridded_field(name, files):
+    """Cached regridded T850 (2.8 deg) for a set of yearly files. Regrids once
+    (building the regridder on demand) and caches to CLIM_DIR/regrid_<name>_2p8deg.nc,
+    so changing the window (or the year) never re-pays the 0.25->2.8 deg regrid."""
+    CLIM_DIR.mkdir(parents=True, exist_ok=True)
+    path = CLIM_DIR / f"regrid_{name}_2p8deg.nc"
+    if path.exists():
+        print(f"[regrid] cached {path.name}", flush=True)
+        da = xr.open_dataarray(path)
+        out = (da.values.astype("float32"), pd.to_datetime(da["time"].values),
+               da["latitude"].values, da["longitude"].values)
+        da.close()
+        return out
+    vals, times, lat, lon = load_regridded(files, _get_regridder(files[0]))
+    xr.DataArray(vals, dims=("time", "latitude", "longitude"),
+                 coords={"time": times.values, "latitude": lat, "longitude": lon},
+                 name="temperature").to_netcdf(
+        path, encoding={"temperature": {"dtype": "float32", "zlib": True,
+                                        "complevel": 4}})
+    print(f"[regrid] wrote {path.name}", flush=True)
+    return vals, times, lat, lon
+
+
+def build_or_load_clim():
+    """Cached per-doy (threshold, threshold_major, mean, std) on the 2.8 deg grid,
+    1991-2020. Uses the cached regridded reference, so a new window only recomputes
+    the day-of-year percentiles (no re-regrid)."""
     CLIM_DIR.mkdir(parents=True, exist_ok=True)
     path = CLIM_DIR / f"clim_w{WINDOW}_2p8deg.nc"
     if path.exists():
@@ -126,9 +162,9 @@ def build_or_load_clim(regridder):
         print("[clim] cache missing/mismatched threshold_major -> rebuild", flush=True)
     ref = sorted(f for f in glob.glob(f"{DATA}/t850_24h_world_*.nc")
                  if 1991 <= _year(f) <= 2020)
-    print(f"[clim] building from {len(ref)} ref years (regrid 0.25->2.8 deg) ...",
+    print(f"[clim] building day-of-year percentiles from {len(ref)} ref years ...",
           flush=True)
-    vals, times, lat, lon = load_regridded(ref, regridder)
+    vals, times, lat, lon = regridded_field("ref", ref)
     doy = times.dayofyear.values
     Y, X = vals.shape[1:]
     ndoy = 366
@@ -240,12 +276,10 @@ def main():
     tgt = sorted(f for f in glob.glob(f"{DATA}/t850_24h_world_*.nc") if _year(f) == YEAR)
     if not tgt:
         raise SystemExit(f"{YEAR} T850 file missing in {DATA}")
-    with xr.open_dataset(tgt[0]) as ds0:
-        regridder = build_regridder(ds0["temperature"].isel(time=0))
-    clim = build_or_load_clim(regridder)
+    clim = build_or_load_clim()
 
-    print(f"[anim] regridding target {YEAR} ...", flush=True)
-    vals, times, lat, lon = load_regridded(tgt, regridder)
+    print(f"[anim] target {YEAR} ...", flush=True)
+    vals, times, lat, lon = regridded_field(str(YEAR), tgt)
 
     # crop to region (both target + clim)
     latm, lonm = region_mask(lat, lon, REGION)
