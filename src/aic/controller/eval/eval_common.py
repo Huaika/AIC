@@ -36,6 +36,9 @@ import xarray as xr
 from dinosaur import horizontal_interpolation, spherical_harmonic, xarray_utils
 import neuralgcm
 
+from aic.regions import (
+    REGIONS, DEFAULT_REGIONS, CONTINENTS, select_region, region_extent)
+
 MODEL_NAME = "v1/deterministic_2_8_deg.pkl"
 WS = "/pfs/work9/workspace/scratch"
 _COAST_ZARR = f"{WS}/ka_je2428-nextgems_2049/constant_fields.zarr"  # land-sea mask
@@ -194,18 +197,7 @@ def selected_variables() -> list[str]:
 # Select with EVAL_REGIONS (comma/space list); plots are written under
 # figures/<run>/<region>/<variable>/<family>/.
 # --------------------------------------------------------------------------- #
-REGIONS = {
-    "world":         (-90.0,  90.0, -180.0, 180.0),
-    "africa":        (-37.0,  38.0,  -20.0,  55.0),
-    "europe":        ( 34.0,  72.0,  -25.0,  45.0),
-    "asia":          (  5.0,  78.0,   25.0, 180.0),
-    "north_america": (  7.0,  84.0, -170.0, -52.0),
-    "south_america": (-57.0,  14.0,  -82.0, -34.0),
-    "oceania":       (-50.0,   0.0,  110.0, 180.0),
-    "antarctica":    (-90.0, -60.0, -180.0, 180.0),
-}
-DEFAULT_REGIONS = ["world"]
-CONTINENTS = [r for r in REGIONS if r != "world"]
+# REGIONS / DEFAULT_REGIONS / CONTINENTS are imported from aic.regions (above).
 
 
 def selected_regions() -> list[str]:
@@ -225,25 +217,7 @@ def selected_regions() -> list[str]:
     return rs
 
 
-def select_region(da: xr.DataArray, region: str) -> xr.DataArray:
-    """Crop ``da`` to the region's lat/lon box (no-op footprint for 'world').
-
-    Normalizes longitude to -180..180 first; handles a box that wraps the
-    antimeridian (lon_west > lon_east)."""
-    s, n, w, e = REGIONS[region]
-    da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180))
-    da = da.sortby("longitude").sortby("latitude")
-    if w <= e:
-        da = da.sel(longitude=slice(w, e))
-    else:  # box crosses the antimeridian (e.g. 150 .. -150)
-        da = da.sel(longitude=(da.longitude >= w) | (da.longitude <= e))
-    return da.sel(latitude=slice(s, n))
-
-
-def region_extent(region: str):
-    """(lon_west, lon_east, lat_south, lat_north) for map axis limits."""
-    s, n, w, e = REGIONS[region]
-    return w, e, s, n
+# select_region / region_extent are imported from aic.regions (above).
 
 
 # --------------------------------------------------------------------------- #

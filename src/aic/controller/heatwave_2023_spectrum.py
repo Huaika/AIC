@@ -42,9 +42,13 @@ Q = float(os.environ.get("HW_Q", "0.95"))
 MIN_DUR = int(os.environ.get("HW_MIN_DURATION", "3"))
 WINDOWS = list(range(0, 8))                        # +/-0 .. +/-7 days
 YEAR = 2023
-MODEL_NAME = "v1/deterministic_2_8_deg.pkl"        # NeuralGCM 2.8 deg checkpoint
+MODEL_NAME = "v1/deterministic_2_8_deg.pkl"        # 2.8 deg model checkpoint
 REGRID_BATCH = int(os.environ.get("HW_REGRID_BATCH", "300"))
 RES_TAG = "2p8deg"
+
+# optional region restriction (crop the regridded field to a box); single source.
+from aic.regions import REGIONS, region_mask
+REGION = os.environ.get("HW_SPEC_REGION", "world").strip().lower()
 
 COUNT_COLOR = "#2166ac"   # blue   (event count)
 AREA_COLOR = "#b35806"    # orange (area / region size)
@@ -87,7 +91,7 @@ def load_regridded(files, regridder):
     reg = reg.transpose("time", "latitude", "longitude")
     vals = reg.values.astype("float32")
     doy = pd.to_datetime(reg["time"].values).dayofyear.values.astype("int16")
-    return vals, doy, reg["latitude"].values
+    return vals, doy, reg["latitude"].values, reg["longitude"].values
 
 
 def grid_cell_area_km2(lat, nlon):
@@ -170,13 +174,25 @@ def main():
     print("[spec] regridder built (NeuralGCM model grid)", flush=True)
 
     print("[spec] regridding reference (1991-2020) ...", flush=True)
-    ref_vals, ref_doy, lat = load_regridded(ref, regridder)
+    ref_vals, ref_doy, lat, lon = load_regridded(ref, regridder)
     print("[spec] regridding target (2023) ...", flush=True)
-    tgt_vals, tgt_doy, _ = load_regridded(tgt, regridder)
+    tgt_vals, tgt_doy, _, _ = load_regridded(tgt, regridder)
+    nlon_full = ref_vals.shape[2]                     # full grid lon count (for cell dlon)
+
+    if REGION not in REGIONS:
+        raise SystemExit(f"HW_SPEC_REGION must be one of {list(REGIONS)}")
+    if REGION != "world":                             # crop the 2.8 deg grid to the box
+        latm, lonm = region_mask(lat, lon, REGION)
+        ref_vals = ref_vals[:, latm][:, :, lonm]
+        tgt_vals = tgt_vals[:, latm][:, :, lonm]
+        lat = lat[latm]
+        print(f"[spec] cropped to {REGION}: {int(latm.sum())}x{int(lonm.sum())} cells",
+              flush=True)
+
     Y, X = ref_vals.shape[1:]
-    band = grid_cell_area_km2(lat, X)
+    band = grid_cell_area_km2(lat, nlon_full)         # per-cell area uses the FULL dlon
     area_flat = np.repeat(band[:, None], X, axis=1).reshape(-1).astype("float64")
-    print(f"[spec] model grid {Y}x{X} = {Y*X} cells; {ref_vals.shape[0]} ref days",
+    print(f"[spec] grid {Y}x{X} = {Y*X} cells ({REGION}); {ref_vals.shape[0]} ref days",
           flush=True)
 
     per_w = {}
@@ -199,6 +215,19 @@ def main():
         amax = max(amax, a.max() if a.size else 0)
     cyl = (0, cmax * 1.08); ayl = (0, amax * 1.08)
 
+    rsuf = "" if REGION == "world" else f"_{REGION}"
+    rlabel = "" if REGION == "world" else f"{REGION.replace('_', ' ').title()} — "
+
+    # per-window, per-duration table (count + area) -> the numeric analysis
+    print(f"\n[table] {YEAR} heat-wave duration -> area, region={REGION} "
+          f"(area in km^2; 1e6 km^2 in parens):", flush=True)
+    for w in WINDOWS:
+        c, a = hist[w]
+        parts = [f"{int(b)}-day: {int(cc)} hw, {aa*1e6:,.0f} km^2 ({aa:.3f}e6)"
+                 for b, cc, aa in zip(bins, c, a) if cc > 0]
+        print(f"  +/-{w}d window | " + "; ".join(parts), flush=True)
+    print("", flush=True)
+
     for w in WINDOWS:
         c, a = hist[w]
         base = (f"95th-pctile T$_{{850}}$ (00 UTC), 1991-2020 reference, "
@@ -206,19 +235,19 @@ def main():
                 f"2.8$\\degree$ grid")
         publication_bar(
             bins, c, COUNT_COLOR,
-            f"2023 heat-wave duration spectrum — event count\n{base}",
+            f"{rlabel}2023 heat-wave duration spectrum — event count\n{base}",
             "Number of heat waves (grid cells)", xlim, cyl,
-            FIGDIR / f"heatwave{YEAR}_count-vs-duration_window-pm{w}d_{RES_TAG}.pdf",
+            FIGDIR / f"heatwave{YEAR}_count-vs-duration_window-pm{w}d_{RES_TAG}{rsuf}.pdf",
             note=f"$\\pm${w} d window\n{int(c.sum())} heat waves")
         publication_bar(
             bins, a, AREA_COLOR,
-            f"2023 heat-wave duration spectrum — area affected\n{base}",
+            f"{rlabel}2023 heat-wave duration spectrum — area affected\n{base}",
             "Area affected (10$^6$ km$^2$)", xlim, ayl,
-            FIGDIR / f"heatwave{YEAR}_area-vs-duration_window-pm{w}d_{RES_TAG}.pdf",
-            note=f"$\\pm${w} d window\n{a.sum():.1f}$\\times$10$^6$ km$^2$")
-        print(f"[spec] wrote window +/-{w}d (count + area)", flush=True)
+            FIGDIR / f"heatwave{YEAR}_area-vs-duration_window-pm{w}d_{RES_TAG}{rsuf}.pdf",
+            note=f"$\\pm${w} d window\n{a.sum():.2f}$\\times$10$^6$ km$^2$")
+        print(f"[spec] wrote window +/-{w}d (count + area){rsuf}", flush=True)
 
-    print(f"[spec] DONE -> {FIGDIR} (16 PDFs, {RES_TAG})", flush=True)
+    print(f"[spec] DONE -> {FIGDIR} (16 PDFs, {RES_TAG}{rsuf})", flush=True)
 
 
 if __name__ == "__main__":

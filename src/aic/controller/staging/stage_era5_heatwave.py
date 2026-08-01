@@ -45,19 +45,8 @@ import netCDF4
 
 ERA5_PATH = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
 
-# Region boxes (lat_south, lat_north, lon_west, lon_east) in -180..180 lon,
-# mirroring aic.controller.eval.eval_common.REGIONS (inlined so this staging
-# module has no import-time dependency on the eval run-registry).
-REGIONS = {
-    "world":         (-90.0,  90.0, -180.0, 180.0),
-    "africa":        (-37.0,  38.0,  -20.0,  55.0),
-    "europe":        ( 34.0,  72.0,  -25.0,  45.0),
-    "asia":          (  5.0,  78.0,   25.0, 180.0),
-    "north_america": (  7.0,  84.0, -170.0, -52.0),
-    "south_america": (-57.0,  14.0,  -82.0, -34.0),
-    "oceania":       (-50.0,   0.0,  110.0, 180.0),
-    "antarctica":    (-90.0, -60.0, -180.0, 180.0),
-}
+# Named regions: single source of truth.
+from aic.regions import REGIONS, select_region
 
 YEAR = int(os.environ["HW_YEAR"])
 LEVEL = int(os.environ.get("HW_LEVEL", "850"))
@@ -80,15 +69,8 @@ PART_PATH = OUT_PATH.with_suffix(".nc.part")
 
 
 def crop_region(da: xr.DataArray) -> xr.DataArray:
-    """Crop to REGION's box; normalise lon to -180..180 (no-op for 'world')."""
-    s, n, w, e = REGIONS[REGION]
-    da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180))
-    da = da.sortby("longitude").sortby("latitude")
-    if w <= e:
-        da = da.sel(longitude=slice(w, e))
-    else:  # antimeridian-crossing box
-        da = da.sel(longitude=(da.longitude >= w) | (da.longitude <= e))
-    return da.sel(latitude=slice(s, n))
+    """Crop to this run's REGION box (no-op footprint for 'world')."""
+    return select_region(da, REGION)
 
 
 def sample_times(tmax: pd.Timestamp) -> np.ndarray:

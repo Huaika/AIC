@@ -45,19 +45,9 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-# Region boxes (lat_south, lat_north, lon_west, lon_east) in -180..180 longitude,
-# mirroring the rest of the pipeline. A region may also be given as a single point
-# via point=(lat, lon) to regional_series().
-REGIONS = {
-    "world":         (-90.0,  90.0, -180.0, 180.0),
-    "africa":        (-37.0,  38.0,  -20.0,  55.0),
-    "europe":        ( 34.0,  72.0,  -25.0,  45.0),
-    "asia":          (  5.0,  78.0,   25.0, 180.0),
-    "north_america": (  7.0,  84.0, -170.0, -52.0),
-    "south_america": (-57.0,  14.0,  -82.0, -34.0),
-    "oceania":       (-50.0,   0.0,  110.0, 180.0),
-    "antarctica":    (-90.0, -60.0, -180.0, 180.0),
-}
+# Named regions: single source of truth (a region may also be given as a single
+# point via point=(lat, lon) to regional_series()).
+from aic.regions import REGIONS, select_region
 
 # Default severity classes, keyed by where an event's cumulative-exceedance
 # magnitude falls in the reference-period distribution of heat-wave magnitudes for
@@ -74,17 +64,6 @@ DEFAULT_SEVERITY_BINS = [
 # --------------------------------------------------------------------------- #
 # 1. regional daily T850 series
 # --------------------------------------------------------------------------- #
-def _crop_region(da: xr.DataArray, region: str) -> xr.DataArray:
-    s, n, w, e = REGIONS[region]
-    da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180))
-    da = da.sortby("longitude").sortby("latitude")
-    if w <= e:
-        da = da.sel(longitude=slice(w, e))
-    else:
-        da = da.sel(longitude=(da.longitude >= w) | (da.longitude <= e))
-    return da.sel(latitude=slice(s, n))
-
-
 def regional_series(files, region="europe", reduce="mean",
                     point=None, var="temperature") -> xr.DataArray:
     """Collapse the gridded daily T850 to a single daily series for a region.
@@ -101,7 +80,7 @@ def regional_series(files, region="europe", reduce="mean",
         da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180)).sortby("longitude")
         series = da.sel(latitude=lat, longitude=lon, method="nearest")
     else:
-        da = _crop_region(da, region)
+        da = select_region(da, region)
         if reduce == "mean":
             w = np.cos(np.deg2rad(da.latitude))
             series = da.weighted(w).mean(["latitude", "longitude"])
