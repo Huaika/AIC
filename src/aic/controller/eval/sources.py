@@ -36,6 +36,7 @@ import pandas as pd
 import xarray as xr
 
 from aic.controller.eval import eval_common as C
+from aic.controller.eval import gridpoints as GP
 
 # Pretty model names + a stable, colour-blind-friendly palette (index = position
 # in the EVAL_SOURCES list). The reference line is always drawn black.
@@ -132,19 +133,42 @@ class Source:
         self._truth[key] = out
         return out
 
+    # -- grid-point-set selection ------------------------------------------- #
+    def as_points(self, regions) -> list[GP.GridPoints]:
+        """Normalise a mixed list of region-name strings and/or GridPoints into
+        GridPoints on THIS source's prediction grid. Region names become the cells
+        inside their box (the global/regional/OOD path); GridPoints (e.g. a
+        heat-wave footprint) pass through unchanged."""
+        lat, lon = self.prediction_grid()
+        out = []
+        for r in regions:
+            out.append(r if isinstance(r, GP.GridPoints)
+                       else GP.GridPoints.from_region(lat, lon, r))
+        return out
+
     # -- per-source data builders (cache paths identical to the single-RUN ones) #
-    def rollout_gmean(self, var, short, levels, regions) -> pd.DataFrame:
-        """Area-mean rollout time series per (region, level, init), cached CSV."""
+    def rollout_gmean(self, var, short, levels, regions, files=None,
+                      cache=True) -> pd.DataFrame:
+        """Area-mean rollout time series per (region, level, init), cached CSV.
+
+        ``regions`` may be region names and/or GridPoints (arbitrary footprints);
+        the row ``region`` column carries each selector's ``key``. ``files``
+        restricts the rollouts (e.g. a case-study episode window); when given, or
+        ``cache=False``, the CSV cache is bypassed (ad-hoc footprints are not
+        persisted)."""
+        points = self.as_points(regions)
+        keys = [p.key for p in points]
         csv = self.outdir / f"{self.run}_rollout_gmean_{short}_{C.level_tag()}.csv"
-        if csv.exists():
+        use_cache = cache and files is None
+        if use_cache and csv.exists():
             df = pd.read_csv(csv, parse_dates=["init_date"])
-            if "region" in df.columns and set(regions) <= set(df["region"].unique()):
+            if "region" in df.columns and set(keys) <= set(df["region"].unique()):
                 print(f"[{self.run}] rollout cached {csv}")
                 return df
             print(f"[{self.run}] rollout cache missing regions -> recompute")
-        files = self.pred_files()
+        files = files if files is not None else self.pred_files()
         print(f"[{self.run}] area-mean {var} @ {len(levels)} lev, "
-              f"{len(regions)} region(s), {len(files)} files")
+              f"{len(keys)} selector(s), {len(files)} files")
         rows = []
         for i, f in enumerate(files):
             ds = xr.open_dataset(f)
@@ -152,34 +176,43 @@ class Source:
                 "init_date", f.stem.replace(f"pred_{self.year}_", "")))
             da = ds[var].sel(level=levels).compute()
             lead_h = ds["lead_hours"].values.astype(int)
-            for reg in regions:
-                gm = C.lat_weighted_mean(C.select_region(da, reg))
+            for gp in points:
+                gm = GP.masked_area_mean(da, gp)
                 for lev in levels:
                     rows.append(pd.DataFrame({
                         "init_date": init, "lead_hours": lead_h, "level": lev,
-                        "region": reg, "pred_gmean": gm.sel(level=lev).values}))
+                        "region": gp.key, "pred_gmean": gm.sel(level=lev).values}))
             ds.close()
             if i % 50 == 0 or i == len(files) - 1:
                 print(f"  {i + 1}/{len(files)}")
         df = pd.concat(rows, ignore_index=True)
-        df.to_csv(csv, index=False)
-        print(f"[{self.run}] wrote {csv}")
+        if use_cache:
+            df.to_csv(csv, index=False)
+            print(f"[{self.run}] wrote {csv}")
         return df
 
-    def drift_per_init(self, var, short, levels, regions) -> pd.DataFrame:
-        """Per-(region, level, init, lead) mse + bias vs this source's truth."""
+    def drift_per_init(self, var, short, levels, regions, files=None,
+                       cache=True) -> pd.DataFrame:
+        """Per-(region, level, init, lead) mse + bias vs this source's truth.
+
+        ``regions`` may be region names and/or GridPoints; ``files`` restricts the
+        rollouts (case-study episode window) and, like ``cache=False``, bypasses the
+        CSV cache."""
         import numpy as np
+        points = self.as_points(regions)
+        keys = [p.key for p in points]
         csv = self.outdir / f"{self.run}_drift_per_init_{short}_{C.level_tag()}.csv"
-        if csv.exists():
+        use_cache = cache and files is None
+        if use_cache and csv.exists():
             df = pd.read_csv(csv, parse_dates=["init_date"])
-            if "region" in df.columns and set(regions) <= set(df["region"].unique()):
+            if "region" in df.columns and set(keys) <= set(df["region"].unique()):
                 print(f"[{self.run}] drift cached {csv}")
                 return df
             print(f"[{self.run}] drift cache missing regions -> recompute")
         truth = self.truth_at_levels(var, levels)
-        files = self.pred_files()
+        files = files if files is not None else self.pred_files()
         print(f"[{self.run}] scoring {len(files)} rollouts vs {self.ref_label} "
-              f"({var}) @ {len(levels)} lev, {len(regions)} region(s)")
+              f"({var}) @ {len(levels)} lev, {len(keys)} selector(s)")
         rows = []
         for i, f in enumerate(files):
             ds = xr.open_dataset(f)
@@ -190,22 +223,22 @@ class Source:
             tru = tru.assign_coords(time=pred["time"].values)
             diff = (pred - tru).compute()
             lead_h = ds["lead_hours"].values.astype(int)
-            for reg in regions:
-                dr = C.select_region(diff, reg)
-                mse = C.lat_weighted_mean(dr ** 2)
-                bias = C.lat_weighted_mean(dr)
+            for gp in points:
+                mse = GP.masked_area_mean(diff ** 2, gp)
+                bias = GP.masked_area_mean(diff, gp)
                 for lev in levels:
                     rows.append(pd.DataFrame({
                         "init_date": init, "lead_hours": lead_h, "level": lev,
-                        "region": reg,
+                        "region": gp.key,
                         "mse": np.asarray(mse.sel(level=lev).values, float),
                         "bias": np.asarray(bias.sel(level=lev).values, float)}))
             ds.close()
             if i % 50 == 0 or i == len(files) - 1:
                 print(f"  {i + 1}/{len(files)}")
         df = pd.concat(rows, ignore_index=True)
-        df.to_csv(csv, index=False)
-        print(f"[{self.run}] wrote {csv}")
+        if use_cache:
+            df.to_csv(csv, index=False)
+            print(f"[{self.run}] wrote {csv}")
         return df
 
     def day10_fields(self, var, short, levels, period) -> xr.Dataset | None:
