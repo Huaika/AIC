@@ -40,7 +40,11 @@ FIGDIR = Path(os.environ.get(
 WINDOWS = [int(x) for x in os.environ.get("HW_WINDOWS", "0,1,3,5,7").replace(",", " ").split()]
 REGION = os.environ.get("HW_SPEC_REGION", "world").strip().lower()
 YEAR = int(os.environ.get("HW_YEAR", "2023"))
+REGION_NAME = "the world" if REGION == "world" else REGION.replace("_", " ").title()
 REF = range(1991, 2021)
+# descriptive definition labels (variable + cadence), shared by all comparison plots
+DEF_LABELS = {"ours": "850hPa 00 UTC", "mixture": "850hPa 6-hourly",
+              "ecmwf": "2mT 6-hourly"}
 INK = "#222222"; MUTED = "#666666"; GRID = "#dddddd"
 
 
@@ -99,7 +103,8 @@ def main():
 
     rtag = "" if REGION == "world" else f"_{REGION}"
     rlab = "" if REGION == "world" else f"{REGION.replace('_', ' ').title()} — "
-    def_leg = [Line2D([], [], color=D.COLORS[d.name], lw=2.4, label=d.name) for d in defs]
+    def_leg = [Line2D([], [], color=D.COLORS[d.name], lw=2.4,
+                      label=DEF_LABELS.get(d.name, d.name)) for d in defs]
     win_leg = [Line2D([], [], color=shades("#3a3a3a", len(WINDOWS))[i], lw=2.4,
                       label=f"$\\pm${w}") for i, w in enumerate(WINDOWS)]
 
@@ -117,27 +122,24 @@ def main():
                      else np.array([ar[dur == b].sum() / 1e6 for b in bins]))
                 ax.plot(bins, y, color=cols[i], lw=1.5)
         ax.set_yscale("log")
-        ax.set_title(f"{rlab}{YEAR} heat waves by definition & window — {metric}\n"
-                     f"95th-pctile, 1991-2020 ref, $\\geq$3-day spells, 2.8$\\degree$ grid",
-                     fontsize=11.5, color=INK, loc="left")
+        ax.set_title(f"Length of heat wave classification in {REGION_NAME} in "
+                     f"{YEAR} by definitions", fontsize=12.5, color=INK, loc="left")
         ax.set_xlabel("Heat-wave duration (consecutive days)", color=INK)
         ax.set_ylabel(ylabel, color=INK)
         ax.grid(True, which="both", color=GRID, lw=0.6)
         for s in ("top", "right"): ax.spines[s].set_visible(False)
-        l1 = ax.legend(handles=def_leg, title="definition (hue)", loc="upper right",
-                       fontsize=8, title_fontsize=8, frameon=False)
-        ax.add_artist(l1)
-        ax.legend(handles=win_leg, title="window (dark=small)", loc="lower left",
-                  fontsize=8, title_fontsize=8, ncol=len(WINDOWS), frameon=False)
+        lwin = ax.legend(handles=win_leg, title="time window", loc="upper right",
+                         bbox_to_anchor=(1.0, 1.0), ncol=len(WINDOWS),
+                         fontsize=8, title_fontsize=8, frameon=False)
+        ax.add_artist(lwin)
+        ax.legend(handles=def_leg, title="definition", loc="upper right",
+                  bbox_to_anchor=(1.0, 0.80), fontsize=8, title_fontsize=8, frameon=False)
         fig.tight_layout()
         out = FIGDIR / f"heatwave{YEAR}_defcompare_{metric}_wsweep_2p8deg{rtag}.pdf"
         fig.savefig(out, bbox_inches="tight"); plt.close(fig)
         print(f"[compare] wrote {out.name}", flush=True)
 
     # ---- 2. timing over the year (area in heat wave per day) ----
-    timing_labels = {"ours": "850hPa 00 UTC", "mixture": "850hPa 6-hourly",
-                     "ecmwf": "2mT 6-hourly"}
-    region_name = "the world" if REGION == "world" else REGION.replace("_", " ").title()
     tp, tl = month_ticks(YEAR)
     fig, ax = plt.subplots(figsize=(9.2, 4.6))
     for d in defs:
@@ -147,15 +149,13 @@ def main():
             ax.plot(tgt_doy, daily, color=cols[i], lw=1.1)
     ax.set_xticks(tp); ax.set_xticklabels(tl)
     ax.set_xlim(1, tgt_doy.max())
-    ax.set_title(f"When heat waves occur in {region_name} in {YEAR}",
-                 fontsize=13, color=INK, loc="left")
+    ax.set_title(f"Area classified as heat wave in {REGION_NAME} in {YEAR} "
+                 f"by definitions", fontsize=13, color=INK, loc="left")
     ax.set_xlabel("Month", color=INK)
     ax.set_ylabel("Area in heat wave (10$^6$ km$^2$)", color=INK)
     ax.grid(True, color=GRID, lw=0.6)
     for s in ("top", "right"): ax.spines[s].set_visible(False)
-    tdef_leg = [Line2D([], [], color=D.COLORS[d.name], lw=2.4,
-                       label=timing_labels.get(d.name, d.name)) for d in defs]
-    l1 = ax.legend(handles=tdef_leg, title="definition", loc="upper left",
+    l1 = ax.legend(handles=def_leg, title="definition", loc="upper left",
                    fontsize=8, title_fontsize=8, frameon=False)
     ax.add_artist(l1)
     ax.legend(handles=win_leg, title="time window", loc="upper right",
