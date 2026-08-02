@@ -44,12 +44,20 @@ def build_regridder(sample):
         src, model_hgrid(), skipna=True)
 
 
-def regrid_da(da, regridder=None):
-    """Regrid a (time, latitude, longitude) DataArray to the model grid."""
+def regrid_da(da, regridder=None, batch=None):
+    """Regrid a (time, latitude, longitude) DataArray to the model grid. Pass
+    `batch` to regrid in time-slabs (bounds memory for large 0.25 deg inputs)."""
     if regridder is None:
         regridder = build_regridder(da.isel(time=0))
-    return xarray_utils.regrid(da, regridder).transpose(
-        "time", "latitude", "longitude")
+    if batch is None:
+        out = xarray_utils.regrid(da, regridder)
+    else:
+        import xarray as _xr
+        n = da.sizes["time"]
+        out = _xr.concat([xarray_utils.regrid(
+            da.isel(time=slice(s, s + batch)).compute(), regridder)
+            for s in range(0, n, batch)], dim="time")
+    return out.transpose("time", "latitude", "longitude")
 
 
 def load_daily_regridded(daily_dir, tag, year, stats, cache_dir):

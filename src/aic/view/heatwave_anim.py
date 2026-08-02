@@ -27,15 +27,11 @@ from __future__ import annotations
 import glob
 import io
 import os
-import pickle
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import xarray as xr
-import gcsfs
-import neuralgcm
-from dinosaur import spherical_harmonic, xarray_utils, horizontal_interpolation
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -43,6 +39,10 @@ from matplotlib.colors import Normalize
 from PIL import Image
 
 from aic.regions import REGIONS, region_mask, region_extent
+# shared analysis core (no duplication of regrid / thresholds / spell detection)
+from aic.controller.heatwave.grid import regrid_da
+from aic.controller.heatwave.climatology import doy_percentile
+from aic.controller.heatwave.detect import active_mask
 try:
     from aic.view.gif_utils import shared_palette, quantize, save_gif
 except ImportError:                                  # standalone run (work9)
@@ -59,7 +59,6 @@ REGION = os.environ.get("HW_SPEC_REGION", "europe").strip().lower()
 YEAR = int(os.environ.get("HW_YEAR", "2023"))
 MIN_DUR = int(os.environ.get("HW_MIN_DURATION", "3"))
 Q = float(os.environ.get("HW_Q", "0.95"))
-MODEL_NAME = "v1/deterministic_2_8_deg.pkl"
 REGRID_BATCH = int(os.environ.get("HW_REGRID_BATCH", "300"))
 ZLIM = float(os.environ.get("HW_ZLIM", "4.0"))       # colour scale +/- sigma
 # only render days where at least this AREA fraction of the region is in a heat
@@ -84,49 +83,10 @@ def _year(f):
     return int(os.path.basename(f).split("_")[-1].split(".")[0])
 
 
-def build_regridder(sample):
-    gcs = gcsfs.GCSFileSystem(token="anon")
-    with gcs.open(f"gs://neuralgcm/models/{MODEL_NAME}", "rb") as f:
-        model = neuralgcm.PressureLevelModel.from_checkpoint(pickle.load(f))
-    src = spherical_harmonic.Grid(
-        latitude_nodes=sample.sizes["latitude"],
-        longitude_nodes=sample.sizes["longitude"],
-        latitude_spacing=xarray_utils.infer_latitude_spacing(sample.latitude),
-        longitude_offset=xarray_utils.infer_longitude_offset(sample.longitude))
-    return horizontal_interpolation.ConservativeRegridder(
-        src, model.data_coords.horizontal, skipna=True)
-
-
-def load_regridded(files, regridder):
-    ds = xr.open_mfdataset(sorted(files), combine="by_coords")
-    da = ds["temperature"]
-    n = da.sizes["time"]
-    chunks = []
-    for s in range(0, n, REGRID_BATCH):
-        chunks.append(xarray_utils.regrid(
-            da.isel(time=slice(s, s + REGRID_BATCH)).compute(), regridder))
-        print(f"    regridded {min(s+REGRID_BATCH, n)}/{n}", flush=True)
-    reg = xr.concat(chunks, dim="time").transpose("time", "latitude", "longitude")
-    times = pd.to_datetime(reg["time"].values)
-    return (reg.values.astype("float32"), times,
-            reg["latitude"].values, reg["longitude"].values)
-
-
-_REGRIDDER = None
-
-
-def _get_regridder(sample_file):
-    global _REGRIDDER
-    if _REGRIDDER is None:
-        with xr.open_dataset(sample_file) as ds0:
-            _REGRIDDER = build_regridder(ds0["temperature"].isel(time=0))
-    return _REGRIDDER
-
-
 def regridded_field(name, files):
-    """Cached regridded T850 (2.8 deg) for a set of yearly files. Regrids once
-    (building the regridder on demand) and caches to CLIM_DIR/regrid_<name>_2p8deg.nc,
-    so changing the window (or the year) never re-pays the 0.25->2.8 deg regrid."""
+    """Cached regridded T850 (2.8 deg) for a set of yearly files -- regrid once (via
+    the shared grid.regrid_da) and cache to CLIM_DIR/regrid_<name>_2p8deg.nc, so a new
+    window/year never re-pays the 0.25->2.8 deg regrid."""
     CLIM_DIR.mkdir(parents=True, exist_ok=True)
     path = CLIM_DIR / f"regrid_{name}_2p8deg.nc"
     if path.exists():
@@ -136,7 +96,11 @@ def regridded_field(name, files):
                da["latitude"].values, da["longitude"].values)
         da.close()
         return out
-    vals, times, lat, lon = load_regridded(files, _get_regridder(files[0]))
+    ds = xr.open_mfdataset(sorted(files), combine="by_coords")
+    reg = regrid_da(ds["temperature"], batch=REGRID_BATCH)
+    vals = reg.values.astype("float32")
+    times = pd.to_datetime(reg["time"].values)
+    lat = reg["latitude"].values; lon = reg["longitude"].values
     xr.DataArray(vals, dims=("time", "latitude", "longitude"),
                  coords={"time": times.values, "latitude": lat, "longitude": lon},
                  name="temperature").to_netcdf(
@@ -168,21 +132,17 @@ def build_or_load_clim():
     doy = times.dayofyear.values
     Y, X = vals.shape[1:]
     ndoy = 366
-    thr = np.full((ndoy, Y, X), np.nan, "float32")
-    thr_major = np.full((ndoy, Y, X), np.nan, "float32")
+    thr = doy_percentile(vals, doy, WINDOW, Q)              # shared core
+    thr_major = doy_percentile(vals, doy, WINDOW, MAJOR_Q)
     mean = np.full((ndoy, Y, X), np.nan, "float32")
     std = np.full((ndoy, Y, X), np.nan, "float32")
-    for d in range(1, ndoy + 1):
+    for d in range(1, ndoy + 1):                            # mean/std for the z-score
         dist = np.abs(doy - d)
         dist = np.minimum(dist, ndoy - dist)
         sel = vals[dist <= WINDOW]
         if sel.shape[0]:
-            thr[d - 1] = np.quantile(sel, Q, axis=0)
-            thr_major[d - 1] = np.quantile(sel, MAJOR_Q, axis=0)
             mean[d - 1] = sel.mean(0)
             std[d - 1] = sel.std(0)
-        if d % 60 == 0:
-            print(f"    doy {d}/{ndoy}", flush=True)
     ds = xr.Dataset(
         {"threshold":       (("dayofyear", "latitude", "longitude"), thr),
          "threshold_major": (("dayofyear", "latitude", "longitude"), thr_major),
@@ -210,21 +170,7 @@ def detect(vals, times, clim):
     z = np.where(sd > 1e-6, (vals - mu) / np.where(sd > 1e-6, sd, 1.0), 0.0)
     hot = vals > thr
     ext = vals > thr_m
-    T, Y, X = hot.shape
-    active = np.zeros((T, Y, X), bool)
-    for j in range(Y):
-        for i in range(X):
-            col = hot[:, j, i]
-            t = 0
-            while t < T:
-                if col[t]:
-                    s = t
-                    while t < T and col[t]:
-                        t += 1
-                    if t - s >= MIN_DUR:
-                        active[s:t, j, i] = True
-                else:
-                    t += 1
+    active = active_mask(hot, MIN_DUR)                      # shared core
     return active, ext, z
 
 

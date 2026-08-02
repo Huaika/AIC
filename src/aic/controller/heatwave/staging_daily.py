@@ -62,7 +62,10 @@ PART_PATH = OUT_PATH.with_suffix(".nc.part")
 
 
 def day_index() -> pd.DatetimeIndex:
-    return pd.date_range(f"{YEAR}-01-01", f"{YEAR}-12-31", freq="1D")
+    # HW_END_DATE caps a partial/current year at the last day with real ERA5 data
+    # (ARCO's time axis is pre-declared into the future but NaN beyond the front).
+    end = os.environ.get("HW_END_DATE", "").strip() or f"{YEAR}-12-31"
+    return pd.date_range(f"{YEAR}-01-01", end, freq="1D")
 
 
 def create_part(days, lat, lon) -> netCDF4.Dataset:
