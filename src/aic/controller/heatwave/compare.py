@@ -123,7 +123,8 @@ def main():
                 ax.plot(bins, y, color=cols[i], lw=1.5)
         ax.set_yscale("log")
         ax.set_title(f"Length of heat wave classification in {REGION_NAME} in "
-                     f"{YEAR} by definitions", fontsize=12.5, color=INK, loc="left")
+                     f"{YEAR} by definitions (> {D.PTAG})",
+                     fontsize=12.5, color=INK, loc="left")
         ax.set_xlabel("Heat-wave duration (consecutive days)", color=INK)
         ax.set_ylabel(ylabel, color=INK)
         ax.grid(True, which="both", color=GRID, lw=0.6)
@@ -135,7 +136,7 @@ def main():
         ax.legend(handles=def_leg, title="definition", loc="upper right",
                   bbox_to_anchor=(1.0, 0.80), fontsize=8, title_fontsize=8, frameon=False)
         fig.tight_layout()
-        out = FIGDIR / f"heatwave{YEAR}_defcompare_{metric}_wsweep_2p8deg{rtag}.pdf"
+        out = FIGDIR / f"heatwave{YEAR}_defcompare_{metric}_{D.PTAG}_wsweep_2p8deg{rtag}.pdf"
         fig.savefig(out, bbox_inches="tight"); plt.close(fig)
         print(f"[compare] wrote {out.name}", flush=True)
 
@@ -150,7 +151,7 @@ def main():
     ax.set_xticks(tp); ax.set_xticklabels(tl)
     ax.set_xlim(1, tgt_doy.max())
     ax.set_title(f"Area classified as heat wave in {REGION_NAME} in {YEAR} "
-                 f"by definitions", fontsize=13, color=INK, loc="left")
+                 f"by definitions (> {D.PTAG})", fontsize=13, color=INK, loc="left")
     ax.set_xlabel("Month", color=INK)
     ax.set_ylabel("Area in heat wave (10$^6$ km$^2$)", color=INK)
     ax.grid(True, color=GRID, lw=0.6)
@@ -161,7 +162,7 @@ def main():
     ax.legend(handles=win_leg, title="time window", loc="upper right",
               fontsize=8, title_fontsize=8, ncol=len(WINDOWS), frameon=False)
     fig.tight_layout()
-    out = FIGDIR / f"heatwave{YEAR}_defcompare_timing_wsweep_2p8deg{rtag}.pdf"
+    out = FIGDIR / f"heatwave{YEAR}_defcompare_timing_{D.PTAG}_wsweep_2p8deg{rtag}.pdf"
     fig.savefig(out, bbox_inches="tight"); plt.close(fig)
     print(f"[compare] wrote {out.name}", flush=True)
     print(f"[compare] DONE -> {FIGDIR}", flush=True)

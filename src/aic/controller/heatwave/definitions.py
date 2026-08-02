@@ -19,16 +19,24 @@ Daily-statistics files (see controller/heatwave/staging_daily): one per
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+
+# Detection percentile, shared by all three definitions. Configurable so the whole
+# comparison can be re-run at a stricter threshold (e.g. HW_PCT=0.99) and saved
+# alongside the default. PTAG is the filename/label token (p95, p99, ...).
+PCT = float(os.environ.get("HW_PCT", "0.95"))
+PP = round(PCT * 100)
+PTAG = f"p{PP}"
 
 
 @dataclass(frozen=True)
 class Definition:
     name: str                     # short id (also the file/label token)
     tag: str                      # daily-stats file prefix: 't850' | 't2m'
-    stats: tuple                  # daily stats that must ALL exceed p95: subset of
-                                  # ('tmin', 'tmax', 't00')
-    pct: float = 0.95             # percentile threshold (highest 5% -> 0.95)
+    stats: tuple                  # daily stats that must ALL exceed the pctile: subset
+                                  # of ('tmin', 'tmax', 'tval')
+    pct: float = PCT              # percentile threshold (highest 5% -> 0.95)
     label: str = ""               # human-readable label for plots
 
     def var(self, stat: str) -> str:
@@ -37,11 +45,11 @@ class Definition:
 
 
 OURS = Definition(
-    "ours", "t850", ("tval",), 0.95, "ours: T$_{850}$ 00 UTC > p95")  # tval = 00 UTC value
+    "ours", "t850", ("tval",), PCT, f"ours: T$_{{850}}$ 00 UTC > {PTAG}")  # tval = 00 UTC value
 MIXTURE = Definition(
-    "mixture", "t850", ("tmin", "tmax"), 0.95, "mixture: T$_{850}$ min & max > p95")
+    "mixture", "t850", ("tmin", "tmax"), PCT, f"mixture: T$_{{850}}$ min & max > {PTAG}")
 ECMWF = Definition(
-    "ecmwf", "t2m", ("tmin", "tmax"), 0.95, "ECMWF: T$_{2m}$ min & max > p95")
+    "ecmwf", "t2m", ("tmin", "tmax"), PCT, f"ECMWF: T$_{{2m}}$ min & max > {PTAG}")
 
 # order = increasing strictness of the condition (single value -> both min&max),
 # 'mixture' sits between 'ours' and 'ecmwf' (same min&max rule as ECMWF but at 850 hPa).
