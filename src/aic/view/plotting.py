@@ -21,8 +21,10 @@ GRID = "#dddddd"
 
 def doy_axis(dates):
     """Map datetimes to a common leap reference year (2000) so series from
-    different calendar years overlay on one Jan-Dec axis."""
-    doy = pd.to_datetime(dates).dayofyear
+    different calendar years overlay on one Jan-Dec axis. Accepts a Series, list,
+    array or index (a plain ``.dayofyear`` only exists on a DatetimeIndex, not on a
+    datetime Series -- hence the explicit DatetimeIndex)."""
+    doy = pd.DatetimeIndex(pd.to_datetime(dates)).dayofyear
     return pd.Timestamp("2000-01-01") + pd.to_timedelta(doy - 1, unit="D")
 
 
