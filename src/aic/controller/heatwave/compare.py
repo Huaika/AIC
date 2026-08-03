@@ -58,7 +58,7 @@ def shades(base_hex, n, fmax=0.66):
 def _load_key(tag, stats, ref_years):
     """Ref (concat ref_years, inclusive) + target regridded daily stats for a
     (variable, reference-period), cropped to REGION ->
-    (ref_stats, ref_doy, ref_months, tgt_stats, tgt_doy, latc, nlon)."""
+    (ref_stats, ref_doy, ref_months, tgt_stats, tgt_doy, tgt_months, latc, nlon)."""
     ref = xr.concat([load_daily_regridded(DAILY_DIR, tag, y, stats, CACHE_DIR)
                      for y in range(ref_years[0], ref_years[1] + 1)], dim="time")
     tgt = load_daily_regridded(DAILY_DIR, tag, YEAR, stats, CACHE_DIR)
@@ -66,9 +66,9 @@ def _load_key(tag, stats, ref_years):
     latm, lonm = (region_mask(lat, lon, REGION) if REGION != "world"
                   else (np.ones(len(lat), bool), np.ones(len(lon), bool)))
     arrs = lambda ds: {s: ds[f"{tag}_{s}"].values[:, latm][:, :, lonm] for s in stats}
-    rt = pd.to_datetime(ref["time"].values)
+    rt = pd.to_datetime(ref["time"].values); tt = pd.to_datetime(tgt["time"].values)
     return (arrs(ref), rt.dayofyear.values, rt.month.values,
-            arrs(tgt), pd.to_datetime(tgt["time"].values).dayofyear.values,
+            arrs(tgt), tt.dayofyear.values, tt.month.values,
             lat[latm], int(lonm.sum()))
 
 
@@ -89,7 +89,7 @@ def main():
     data = {k: _load_key(k[0], sorted(sts), k[1]) for k, sts in keys.items()}
 
     d0 = data[(defs[0].tag, defs[0].ref_years)]
-    latc, nlon = d0[5], d0[6]
+    latc, nlon = d0[6], d0[7]
     band = DET.cell_area_km2(latc, 128)
     area2d = np.repeat(band[:, None], nlon, axis=1)
     area_flat = area2d.reshape(-1)
@@ -102,10 +102,11 @@ def main():
     # detect for every (definition, window)
     res = {}
     for d in defs:
-        ref_stats, ref_doy, ref_months, tgt_stats, td, _, _ = data[(d.tag, d.ref_years)]
+        (ref_stats, ref_doy, ref_months, tgt_stats, td, tgt_months,
+         _, _) = data[(d.tag, d.ref_years)]
         for w in windows_for(d):
             hot = DET.hot_mask(d, ref_stats, ref_doy, tgt_stats, td, w,
-                               ref_months=ref_months)
+                               ref_months=ref_months, tgt_months=tgt_months, lat=latc)
             dur, ar = DET.spell_events(hot, area_flat)
             daily = (DET.active_mask(hot) * area2d[None]).sum(axis=(1, 2)) / 1e6
             res[(d.name, w)] = (dur, ar, daily)

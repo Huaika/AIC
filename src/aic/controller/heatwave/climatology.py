@@ -25,12 +25,19 @@ def doy_percentile(vals, doy, window, q, ndoy=366):
     return out
 
 
-def season_percentile(vals, months, season, q):
-    """Single per-cell q-quantile of `vals` (T, Y, X) over the calendar months in
-    ``season`` (inclusive ``(m_start, m_end)``, e.g. ``(5, 9)`` = May-Sep). Returns a
-    2-D ``thr[Y, X]`` -- one fixed threshold per cell, no day-of-year dependence
-    (the EURO-CORDEX heat-wave threshold)."""
+def season_mask(months, season):
+    """Boolean selector for the calendar months in ``season`` (inclusive
+    ``(m_start, m_end)``); wraps the year end when ``m_start > m_end`` (e.g.
+    ``(11, 3)`` = Nov-Mar, the austral summer)."""
     m0, m1 = season
     months = np.asarray(months)
-    sel = vals[(months >= m0) & (months <= m1)]
+    return ((months >= m0) & (months <= m1)) if m0 <= m1 \
+        else ((months >= m0) | (months <= m1))
+
+
+def season_percentile(vals, months, season, q):
+    """Single per-cell q-quantile of `vals` (T, Y, X) over the calendar months in
+    ``season`` (e.g. ``(5, 9)`` = May-Sep). Returns a 2-D ``thr[Y, X]`` -- one fixed
+    threshold per cell, no day-of-year dependence (the EURO-CORDEX threshold)."""
+    sel = vals[season_mask(months, season)]
     return np.quantile(sel, q, axis=0).astype("float32")

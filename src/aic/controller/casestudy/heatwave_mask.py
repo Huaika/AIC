@@ -63,11 +63,13 @@ def active_mask_da(defn, year: int, window: int = DEFAULT_WINDOW,
     ref_stats = {s: ref[f"{tag}_{s}"].values for s in stats}
     tgt_stats = {s: tgt[f"{tag}_{s}"].values for s in stats}
     ref_t = pd.to_datetime(ref["time"].values)
+    tgt_t = pd.to_datetime(tgt["time"].values)
     ref_doy = ref_t.dayofyear.values
-    tgt_doy = pd.to_datetime(tgt["time"].values).dayofyear.values
+    tgt_doy = tgt_t.dayofyear.values
 
     hot = DET.hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window,
-                       ref_months=ref_t.month.values)
+                       ref_months=ref_t.month.values, tgt_months=tgt_t.month.values,
+                       lat=lat)
     active = DET.active_mask(hot, DET.MIN_DUR)           # (T, Y, X) bool
 
     latm, lonm = region_mask(lat, lon, region)

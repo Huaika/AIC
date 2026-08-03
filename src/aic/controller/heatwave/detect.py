@@ -7,27 +7,49 @@ from __future__ import annotations
 
 import numpy as np
 
-from aic.controller.heatwave.climatology import doy_percentile, season_percentile
+from aic.controller.heatwave.climatology import (
+    doy_percentile, season_percentile, season_mask)
 
 MIN_DUR = 3
 
 
-def hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window, ref_months=None):
+def flip_season(season):
+    """The opposite-hemisphere season: shift both month bounds by 6 (May-Sep ->
+    Nov-Mar), so the southern hemisphere uses its own (austral) summer."""
+    shift = lambda m: (m - 1 + 6) % 12 + 1
+    return (shift(season[0]), shift(season[1]))
+
+
+def hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window,
+             ref_months=None, tgt_months=None, lat=None):
     """Boolean hot mask (T, Y, X) for the target year under `defn`: for each daily
     statistic in defn.stats, the target value exceeds the reference threshold; the
     day is hot where ALL of them do (logical AND).
 
     Windowed definitions (``defn.kind == "doy"``) compare against a per-calendar-day
     +/-``window`` percentile. The EURO-CORDEX definition (``kind == "season"``)
-    compares against a single seasonal per-cell percentile (``ref_months`` gives the
-    calendar month of each reference day; ``window`` is ignored)."""
+    compares against a single seasonal per-cell percentile AND only flags days that
+    fall inside the season -- hemisphere-aware: the northern hemisphere uses
+    ``defn.season`` (May-Sep), the southern hemisphere the flipped season (Nov-Mar),
+    both for the threshold's reference pool and for the in-season limit. Requires
+    ``ref_months``, ``tgt_months`` (calendar month per reference / target day) and
+    ``lat`` (the Y-axis latitudes)."""
     hot = None
     for s in defn.stats:
         if defn.kind == "season":
-            if ref_months is None:
-                raise ValueError("seasonal definition needs ref_months")
-            thr = season_percentile(ref_stats[s], ref_months, defn.season, defn.pct)
-            m = tgt_stats[s] > thr[None, :, :]
+            if ref_months is None or tgt_months is None or lat is None:
+                raise ValueError("seasonal definition needs ref_months, tgt_months, lat")
+            nh_s = defn.season
+            sh_s = flip_season(nh_s)
+            thr_nh = season_percentile(ref_stats[s], ref_months, nh_s, defn.pct)
+            thr_sh = season_percentile(ref_stats[s], ref_months, sh_s, defn.pct)
+            nh = np.asarray(lat) >= 0                          # (Y,)
+            thr = np.where(nh[:, None], thr_nh, thr_sh)        # (Y, X)
+            inseason = np.where(                               # (T, Y, 1) in-season
+                nh[None, :, None],
+                season_mask(tgt_months, nh_s)[:, None, None],
+                season_mask(tgt_months, sh_s)[:, None, None])
+            m = (tgt_stats[s] > thr[None, :, :]) & inseason
         else:
             thr = doy_percentile(ref_stats[s], ref_doy, window, defn.pct)
             m = tgt_stats[s] > thr[tgt_doy - 1]
