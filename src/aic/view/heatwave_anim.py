@@ -59,8 +59,13 @@ REGION = os.environ.get("HW_SPEC_REGION", "europe").strip().lower()
 YEAR = int(os.environ.get("HW_YEAR", "2023"))
 # HW_CS_DEF: drive the affected-region SET (which cells, which days) from a named
 # heat-wave definition (e.g. "cordex") instead of this module's own T850 detection.
-# The animation still colours by the T850 anomaly -- only the mask + episodes change.
+# The animation still colours by the T850 anomaly -- but relative to THAT definition's
+# reference period (cordex: 1971-2000; others: 1991-2020), read from the 2.8deg
+# daily-stats caches (t850 00-UTC value).
 CS_DEF = os.environ.get("HW_CS_DEF", "").strip()
+DAILY_DIR = os.environ.get(
+    "HW_DAILY_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave_daily")
+REF_LABEL = "1991-2020"          # anomaly reference period (set per definition in main)
 MIN_DUR = int(os.environ.get("HW_MIN_DURATION", "3"))
 Q = float(os.environ.get("HW_Q", "0.95"))
 REGRID_BATCH = int(os.environ.get("HW_REGRID_BATCH", "300"))
@@ -214,7 +219,7 @@ def frame(lon2d, lat2d, z_day, active_day, date, w, e, s, n, region, nactive,
            f"{cover_frac:.0%} at 99th pctile")
     ax.set_title(f"{region.title()} heat waves {date.date()}\n{sub}", fontsize=10.3)
     cb = fig.colorbar(m, ax=ax, shrink=0.85)
-    cb.set_label("T$_{850}$ anomaly  (σ from 1991-2020 daily mean)")
+    cb.set_label(f"T$_{{850}}$ anomaly  (σ from {REF_LABEL} daily mean)")
     fig.tight_layout()
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=95)
@@ -223,37 +228,89 @@ def frame(lon2d, lat2d, z_day, active_day, date, w, e, s, n, region, nactive,
     return Image.open(buf).convert("RGB")
 
 
+def _doy_mean_std(vals, doy, window, ndoy=366):
+    """Per-calendar-day mean and std of `vals` (T,Y,X), pooling a circular +/-window."""
+    Y, X = vals.shape[1:]
+    mean = np.full((ndoy, Y, X), np.nan, "float32")
+    std = np.full((ndoy, Y, X), np.nan, "float32")
+    for d in range(1, ndoy + 1):
+        dist = np.abs(doy - d)
+        dist = np.minimum(dist, ndoy - dist)
+        sel = vals[dist <= window]
+        if sel.shape[0]:
+            mean[d - 1] = sel.mean(0)
+            std[d - 1] = sel.std(0)
+    return mean, std
+
+
+def def_reference(defn, window):
+    """The colouring reference for a definition: (mean, std) day-of-year climatology
+    of 00-UTC T850 over the definition's OWN reference period (e.g. 1971-2000 for
+    cordex), plus the target-year field -- all from the 2.8deg daily-stats caches
+    (t850 'tval'), so no re-regrid. Returns (mean, std, vals, times, lat, lon)."""
+    from aic.controller.heatwave.grid import load_daily_regridded
+    r0, r1 = defn.ref_years
+    cache = CLIM_DIR / f"clim_{defn.name}_{r0}-{r1}_w{window}_2p8deg.nc"
+    if cache.exists():
+        cd = xr.open_dataset(cache)
+        mean, std = cd["mean"].values, cd["std"].values
+        lat, lon = cd["latitude"].values, cd["longitude"].values
+        cd.close()
+    else:
+        refs = [load_daily_regridded(DAILY_DIR, "t850", y, ["tval"], str(CLIM_DIR))
+                for y in defn.ref_range]
+        ref = xr.concat(refs, dim="time")
+        vals = ref["t850_tval"].values.astype("float32")
+        doy = pd.to_datetime(ref["time"].values).dayofyear.values
+        lat = ref["latitude"].values; lon = ref["longitude"].values
+        mean, std = _doy_mean_std(vals, doy, window)
+        xr.Dataset({"mean": (("dayofyear", "latitude", "longitude"), mean),
+                    "std":  (("dayofyear", "latitude", "longitude"), std)},
+                   coords={"dayofyear": np.arange(1, 367), "latitude": lat,
+                           "longitude": lon}).to_netcdf(cache)
+        print(f"[clim] wrote {cache.name} ({r0}-{r1} T850 ref)", flush=True)
+    tds = load_daily_regridded(DAILY_DIR, "t850", YEAR, ["tval"], str(CLIM_DIR))
+    return (mean, std, tds["t850_tval"].values.astype("float32"),
+            pd.to_datetime(tds["time"].values), lat, lon)
+
+
 def main():
+    global REF_LABEL
     GIF_DIR.mkdir(parents=True, exist_ok=True)
-    tgt = sorted(f for f in glob.glob(f"{DATA}/t850_24h_world_*.nc") if _year(f) == YEAR)
-    if not tgt:
-        raise SystemExit(f"{YEAR} T850 file missing in {DATA}")
-    clim = build_or_load_clim()
-
-    print(f"[anim] target {YEAR} ...", flush=True)
-    vals, times, lat, lon = regridded_field(str(YEAR), tgt)
-
-    # crop to region (both target + clim)
-    latm, lonm = region_mask(lat, lon, REGION)
-    vals = vals[:, latm][:, :, lonm]
-    clim = clim.isel(latitude=latm, longitude=lonm)
-    latc = lat[latm]
-    lonc = ((lon[lonm] + 180) % 360) - 180
-    order = np.argsort(lonc)                       # sort lon to -180..180 ascending
-    lonc = lonc[order]; vals = vals[:, :, order]
-    clim = clim.isel(longitude=order)
-    lon2d, lat2d = np.meshgrid(lonc, latc)
-    w, e, s, n = region_extent(REGION)
-
-    active, ext, z = detect(vals, times, clim)      # z = T850 anomaly (colouring)
-
     if CS_DEF:
-        # The SET of affected (cell, day) comes from a named definition (e.g. cordex);
-        # the animation still colours by the T850 anomaly z above. Align the
-        # definition's active mask + episodes onto THIS module's region grid/times.
+        # SET of affected (cell, day) + the anomaly reference come from a named
+        # definition (e.g. cordex): the colouring is the T850 anomaly relative to
+        # THAT definition's reference period (cordex 1971-2000), and the highlighted
+        # cells/episodes come from its active mask.
         from aic.controller.casestudy import heatwave_mask as HM
         from aic.controller.heatwave import definitions as D
         defn = D.BY_NAME[CS_DEF]
+        REF_LABEL = f"{defn.ref_years[0]}-{defn.ref_years[1]}"
+        print(f"[anim] {CS_DEF} target {YEAR} (T850 anomaly vs {REF_LABEL}) ...", flush=True)
+        mean, std, vals, times, lat, lon = def_reference(defn, WINDOW)
+    else:
+        tgt = sorted(f for f in glob.glob(f"{DATA}/t850_24h_world_*.nc") if _year(f) == YEAR)
+        if not tgt:
+            raise SystemExit(f"{YEAR} T850 file missing in {DATA}")
+        clim = build_or_load_clim()
+        print(f"[anim] target {YEAR} ...", flush=True)
+        vals, times, lat, lon = regridded_field(str(YEAR), tgt)
+
+    # crop to region + sort lon to -180..180 ascending
+    latm, lonm = region_mask(lat, lon, REGION)
+    latc = lat[latm]
+    lonc = ((lon[lonm] + 180) % 360) - 180
+    order = np.argsort(lonc)
+    lonc = lonc[order]
+    crop = lambda a: a[:, latm][:, :, lonm][:, :, order]
+    vals = crop(vals)
+    lon2d, lat2d = np.meshgrid(lonc, latc)
+    w, e, s, n = region_extent(REGION)
+
+    if CS_DEF:
+        doy = times.dayofyear.values
+        mu = crop(mean)[doy - 1]; sd = crop(std)[doy - 1]
+        z = np.where(sd > 1e-6, (vals - mu) / np.where(sd > 1e-6, sd, 1.0), 0.0)
         ad = HM.active_mask_da(defn, YEAR, region=REGION).reindex(
             time=times.values, method="nearest")           # (T, 64, 128), same grid
         active = ad.values[:, latm][:, :, lonm][:, :, order]
@@ -266,20 +323,19 @@ def main():
             f"{times[s[0]].date()}..{times[s[-1]].date()} ({len(s)}d)" for s in spans),
             flush=True)
     else:
+        clim = clim.isel(latitude=latm, longitude=lonm).isel(longitude=order)
+        active, ext, z = detect(vals, times, clim)      # z = T850 anomaly (colouring)
         aw = np.cos(np.deg2rad(latc))
         aw2d = np.repeat(aw[:, None], vals.shape[2], axis=1)          # (Yc, Xc)
         ext_cover = (ext * aw2d[None, :, :]).sum(axis=(1, 2)) / aw2d.sum()
         # a MAJOR-EVENT day: the major (99th) percentile is reached over >= MAJOR_COVER
-        # of the region (widespread extreme). Episodes are runs of such days; frames
-        # highlight the heat-wave (>=3-day spell) cells on those days.
+        # of the region (widespread extreme). Episodes are runs of such days.
         qual = np.where(ext_cover >= MAJOR_COVER)[0]
         print(f"[anim] {REGION}: {len(qual)} major-event days (>= {MAJOR_COVER:.0%} of "
               f"region at >= {MAJOR_Q:.0%}-pctile) in {YEAR} (vs "
               f"{int(active.any(axis=(1, 2)).sum())} days with any heat wave)", flush=True)
         if len(qual) == 0:
             raise SystemExit("no major-event days -> no GIF")
-        # group qualifying days into temporally connected EPISODES (each -> its own gif);
-        # an episode spans its first..last qualifying day so its animation is continuous.
         episodes = [[int(qual[0])]]
         for d in qual[1:]:
             (episodes[-1].append(int(d)) if d - episodes[-1][-1] <= EPISODE_GAP
@@ -302,10 +358,13 @@ def main():
     pal = shared_palette([rgb[t] for t in need])
     quant = {t: quantize(rgb[t], pal) for t in need}
 
-    mtag = f"_{CS_DEF}" if CS_DEF else f"_w{WINDOW}_major{int(MAJOR_Q*100)}c{int(MAJOR_COVER*100)}"
+    # one folder per definition (cordex / ours / ...)
+    subdir = GIF_DIR / (CS_DEF or "ours")
+    subdir.mkdir(parents=True, exist_ok=True)
+    tag = "" if CS_DEF else f"_w{WINDOW}_major{int(MAJOR_Q*100)}c{int(MAJOR_COVER*100)}"
     for span in spans:
         a, b = times[span[0]].date(), times[span[-1]].date()
-        out = GIF_DIR / f"heatwave{YEAR}_{REGION}{mtag}_{a}_{b}.gif"
+        out = subdir / f"heatwave{YEAR}_{REGION}{tag}_{a}_{b}.gif"
         save_gif([quant[t] for t in span], out)
         print(f"[anim] wrote {out.name} ({len(span)} frames, "
               f"{out.stat().st_size / 1e6:.2f} MB)", flush=True)
