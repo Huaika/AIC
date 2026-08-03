@@ -89,7 +89,6 @@ def spaghetti_multiyear(sources, var, levels, region):
     short, units, label = meta["short"], meta["units"], meta["label"]
     area = "global" if region == "world" else region
     years = sorted({s.year for s in sources})
-    ystyle = {y: S.year_linestyle(i) for i, y in enumerate(years)}
     rolls = {s.run: s.rollout_gmean(var, short, levels, [region]) for s in sources}
     refs = {}                                          # (dataset, year) -> frame
     for s in sources:
@@ -99,26 +98,28 @@ def spaghetti_multiyear(sources, var, levels, region):
 
     for lev in C.render_levels(levels):
         fig, ax = plt.subplots(figsize=(13, 5.4))
+        # every line is solid; the years are distinguished by a label written to the
+        # right of the plot at the height of each truth line's final value.
         for (dset, yr), rf in refs.items():
             r = rf[(rf["region"] == region) & (rf["level"] == lev)].sort_values("date")
-            ax.plot(P.doy_axis(r["date"]), r["ref_gmean"], color=S.REF_COLOR,
-                    lw=1.8, ls=ystyle[yr], alpha=0.9, zorder=3)
+            x = P.doy_axis(r["date"])
+            ax.plot(x, r["ref_gmean"], color=S.REF_COLOR, lw=1.8, alpha=0.9, zorder=3)
+            ax.annotate(str(yr), xy=(x[-1], float(r["ref_gmean"].iloc[-1])),
+                        xytext=(6, 0), textcoords="offset points", va="center",
+                        ha="left", fontsize=9, fontweight="bold", color=P.INK,
+                        annotation_clip=False)
         for s in sources:
             r = rolls[s.run]
             r = r[(r["region"] == region) & (r["level"] == lev)]
             if r.empty:
                 continue
-            P.draw_rollout_bundle(ax, r, s.color, linestyle=ystyle[s.year], lw=0.5,
-                                  alpha=0.45, x_transform=P.doy_axis)
-        mh = [Line2D([], [], color=S.model_color(m), lw=2, label=S.MODEL_PRETTY.get(m, m))
-              for m in dict.fromkeys(s.model for s in sources)]
-        yh = ([Line2D([], [], color=S.REF_COLOR, lw=1.8, ls="-", label="reference (truth)")]
-              + [Line2D([], [], color="0.35", lw=1.8, ls=ystyle[y], label=str(y))
-                 for y in years])
-        l1 = ax.legend(handles=mh, title="model", loc="upper left",
-                       fontsize=8, framealpha=0.9)
-        ax.add_artist(l1)
-        ax.legend(handles=yh, title="year (line style)", loc="upper right",
+            P.draw_rollout_bundle(ax, r, s.color, lw=0.5, alpha=0.45,
+                                  x_transform=P.doy_axis)
+        mh = ([Line2D([], [], color=S.REF_COLOR, lw=1.8, label="reference (truth)")]
+              + [Line2D([], [], color=S.model_color(m), lw=2,
+                        label=S.MODEL_PRETTY.get(m, m))
+                 for m in dict.fromkeys(s.model for s in sources)])
+        ax.legend(handles=mh, title="model", loc="upper left",
                   fontsize=8, framealpha=0.9)
         ax.set_title(f"{area.capitalize()}-mean {label} at {lev} hPa — "
                      f"out-of-distribution rollouts ({', '.join(str(y) for y in years)})")
