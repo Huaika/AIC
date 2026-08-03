@@ -25,23 +25,14 @@ import matplotlib.pyplot as plt
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import sources as S
 from aic.view import naming as fig_naming
-
-
-def _panel(ax, field, cmap, vmin, vmax, title, w, e, s, n, cbar_label, fig):
-    lon, lat = field.longitude, field.latitude
-    m = ax.pcolormesh(lon, lat, field, cmap=cmap, vmin=vmin, vmax=vmax, shading="auto")
-    ax.set_title(title, fontsize=10)
-    fig.colorbar(m, ax=ax, shrink=0.8, label=cbar_label)
-    C.draw_coastlines(ax)
-    ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
-    ax.set_xlim(w, e); ax.set_ylim(s, n); ax.grid(alpha=0.2)
+from aic.view import plotting as P
 
 
 def plot_period_region(fields, sources, var, short, units, label, fcmap,
                        levels, period, reg):
     """fields: {run: xr.Dataset(fc_day10_clim, ref_clim, drift)} per source."""
     figdir = S.figure_dir(sources, period, reg, var, "drift_maps")
-    w, e, s, n_ = C.region_extent(reg)
+    extent = C.region_extent(reg)
     area = "global" if reg == "world" else reg
     ref_src = sources[0]
     for lev in levels:
@@ -64,22 +55,25 @@ def plot_period_region(fields, sources, var, short, units, label, fcmap,
         col = 0
         for src in sources:  # forecast panels
             ninit = int(fields[src.run].attrs.get("n_inits", 0))
-            _panel(axes[col], fcs[src.run], fcmap, vmin, vmax,
-                   f"{src.pretty} day-10 climatology\n(mean of {ninit} forecasts)",
-                   w, e, s, n_, f"{label} [{units}]", fig)
+            P.map_panel(axes[col], fcs[src.run], cmap=fcmap, vmin=vmin, vmax=vmax,
+                        title=f"{src.pretty} day-10 climatology\n(mean of {ninit} forecasts)",
+                        cbar_label=f"{label} [{units}]", extent=extent, fig=fig,
+                        coast=C.draw_coastlines)
             col += 1
-        _panel(axes[col], rf, fcmap, vmin, vmax,  # shared reference panel
-               f"{ref_src.ref_label} reference mean", w, e, s, n_,
-               f"{label} [{units}]", fig)
+        P.map_panel(axes[col], rf, cmap=fcmap, vmin=vmin, vmax=vmax,  # shared ref
+                    title=f"{ref_src.ref_label} reference mean",
+                    cbar_label=f"{label} [{units}]", extent=extent, fig=fig,
+                    coast=C.draw_coastlines)
         col += 1
         for src in sources:  # drift panels
             dr = drs[src.run]
             gm = float(dr.weighted(np.cos(np.deg2rad(dr.latitude)))
                        .mean(["longitude", "latitude"]))
-            _panel(axes[col], dr, "RdBu_r", -dlim, dlim,
-                   f"{src.pretty} drift = fc − {ref_src.ref_label}\n"
-                   f"({area} mean {gm:+.4g} {units})",
-                   w, e, s, n_, f"drift [{units}]", fig)
+            P.map_panel(axes[col], dr, cmap="RdBu_r", vmin=-dlim, vmax=dlim,
+                        title=f"{src.pretty} drift = fc − {ref_src.ref_label}\n"
+                              f"({area} mean {gm:+.4g} {units})",
+                        cbar_label=f"drift [{units}]", extent=extent, fig=fig,
+                        coast=C.draw_coastlines)
             col += 1
 
         models = " vs ".join(dict.fromkeys(x.pretty for x in sources))

@@ -39,6 +39,7 @@ from aic.controller.eval import eval_common as C
 from aic.controller.eval import gridpoints as GP
 from aic.controller.eval import sources as S
 from aic.view import drift as drift_view
+from aic.view import plotting as P
 from aic.controller.casestudy import heatwave_mask as HM
 from aic.controller.heatwave import definitions as D
 from aic.regions import region_extent
@@ -105,16 +106,7 @@ def spaghetti_episode(sources, defn, year, ep, var, lev):
             continue
         roll = src.rollout_gmean(var, meta["short"], [lev], [gp],
                                  files=files, cache=False)
-        r = roll.copy()
-        r["valid_time"] = r["init_date"] + pd.to_timedelta(r["lead_hours"], unit="h")
-        r["lead_day_idx"] = (r["lead_hours"] // 24).astype(int)
-        for d in sorted(r["init_date"].unique()):
-            g = r[r["init_date"] == d]
-            daily = (g.groupby("lead_day_idx")
-                       .agg(vt=("valid_time", "mean"), val=("pred_gmean", "mean"))
-                       .reset_index())
-            ax.plot(daily["vt"], daily["val"], color=src.color, lw=0.7, alpha=0.55,
-                    zorder=2)
+        P.draw_rollout_bundle(ax, roll, src.color, lw=0.7, alpha=0.55)
         ax.plot([], [], color=src.color, lw=1.6, label=f"{src.pretty} 10-day rollout")
         drew = True
     if not drew:
@@ -174,21 +166,16 @@ def skill_episode(sources, defn, year, ep, var, lev):
         return
     ttl = (f"Europe heat-wave {ep.label} — footprint {label}@{lev} hPa "
            f"(mean of {n_any} rollouts)")
+    lines = [(src.color, src.pretty, a) for src, a in curves]
     for metric, ylab, zero in [("rmse", f"RMSE [{units}]", False),
                                ("bias", f"mean bias [{units}]", True)]:
         fig, ax = plt.subplots(figsize=(6.8, 4.4))
-        if zero:
-            ax.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
-        for src, a in curves:
-            ax.plot(a["lead_day"], a[metric], color=src.color, lw=1.9,
-                    label=src.pretty)
+        P.draw_skill_metric(ax, lines, metric, zero_line=zero)
         ax.set_title(ttl, fontsize=11, color=INK, loc="left")
-        ax.set_xlabel("lead time (days)"); ax.set_ylabel(ylab)
-        ax.grid(True, alpha=0.3)
+        ax.set_ylabel(ylab)
         if len(curves) > 1:
             ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
-        for s in ("top", "right"):
-            ax.spines[s].set_visible(False)
+        P.despine(ax)
         fig.tight_layout()
         out = fig_dir(defn, year, ep) / f"{metric}-vs-lead_{meta['short']}_L{lev:04d}.pdf"
         fig.savefig(out, bbox_inches="tight"); plt.close(fig)
@@ -231,17 +218,6 @@ def _episode_day10(source, ep, year, var, lev):
     return fc, rf, (fc - rf), n, gp
 
 
-def _map_panel(ax, field, cmap, vlo, vhi, ttl, clab, extent, fig):
-    w, e, s, n_ = extent
-    m = ax.pcolormesh(field.longitude, field.latitude, field, cmap=cmap,
-                      vmin=vlo, vmax=vhi, shading="auto")
-    fig.colorbar(m, ax=ax, shrink=0.82, label=clab)
-    C.draw_coastlines(ax)
-    ax.set_xlim(w, e); ax.set_ylim(s, n_)
-    ax.set_title(ttl, fontsize=10); ax.grid(alpha=0.2)
-    ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
-
-
 def driftmap_episode(sources, defn, year, ep, var, lev):
     """Eulerian day-10 maps over the footprint, all models SIDE BY SIDE in one
     figure: shared ERA5 panel + (day-10 mean, mean day-10 error) per model."""
@@ -263,16 +239,19 @@ def driftmap_episode(sources, defn, year, ep, var, lev):
     fig, axes = plt.subplots(1, npan, figsize=(5.4 * npan, 4.6), squeeze=False)
     axes = axes[0]
     ref_src = got[0][0]
-    _map_panel(axes[0], got[0][1][1], fcmap, vmin, vmax,
-               f"{ref_src.ref_label} mean", f"{label} [{units}]", extent, fig)
+    P.map_panel(axes[0], got[0][1][1], cmap=fcmap, vmin=vmin, vmax=vmax,
+                title=f"{ref_src.ref_label} mean", cbar_label=f"{label} [{units}]",
+                extent=extent, fig=fig, coast=C.draw_coastlines)
     col = 1
     for src, (fc, rf, dr, n, gp) in got:
         gm = float(GP.masked_area_mean(dr, gp))
-        _map_panel(axes[col], fc, fcmap, vmin, vmax,
-                   f"{src.pretty} day-10 mean", f"{label} [{units}]", extent, fig)
-        _map_panel(axes[col + 1], dr, "RdBu_r", -dlim, dlim,
-                   f"{src.pretty} day-10 error\n(footprint mean {gm:+.4g} {units})",
-                   f"error [{units}]", extent, fig)
+        P.map_panel(axes[col], fc, cmap=fcmap, vmin=vmin, vmax=vmax,
+                    title=f"{src.pretty} day-10 mean", cbar_label=f"{label} [{units}]",
+                    extent=extent, fig=fig, coast=C.draw_coastlines)
+        P.map_panel(axes[col + 1], dr, cmap="RdBu_r", vmin=-dlim, vmax=dlim,
+                    title=f"{src.pretty} day-10 error\n(footprint mean {gm:+.4g} {units})",
+                    cbar_label=f"error [{units}]", extent=extent, fig=fig,
+                    coast=C.draw_coastlines)
         col += 2
     models = " vs ".join(dict.fromkeys(s.pretty for s, _ in got))
     fig.suptitle(f"Europe heat-wave {ep.label} — day-10 {label}@{lev} hPa over the "

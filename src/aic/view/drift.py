@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import sources as S
 from aic.view import naming as fig_naming
+from aic.view import plotting as P
 
 
 def aggregate(df) -> pd.DataFrame:
@@ -63,32 +64,29 @@ def plot_variable(sources, var, levels, regions, periods):
                 # overlays one line per source, coloured by the shared model palette.
                 title_model = sources[0].ref_label if single else \
                     " vs ".join(dict.fromkeys(s.pretty for s in sources))
+                # gather each source's (colour, label, curve) for this region/level
+                curves, n_ref = [], None
+                for s in sources:
+                    if s.run not in aggs:
+                        continue
+                    ar = aggs[s.run]
+                    a = ar[(ar["region"] == reg) & (ar["level"] == lev)] \
+                        .sort_values("lead_hours")
+                    if a.empty:
+                        continue
+                    n_ref = int(a["n_init"].iloc[0])
+                    curves.append((s.color, s.pretty, a))
+                if n_ref is None:
+                    continue
                 for metric, ylab, zero, kind in [
                         ("rmse", f"RMSE [{units}]", False, "drift_rmse"),
                         ("bias", f"mean bias [{units}]", True, "drift_bias")]:
                     fig, ax = plt.subplots(figsize=(6.5, 4.4))
-                    if zero:
-                        ax.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
-                    n_ref = None
-                    for s in sources:
-                        if s.run not in aggs:
-                            continue
-                        ar = aggs[s.run]
-                        a = ar[(ar["region"] == reg) & (ar["level"] == lev)] \
-                            .sort_values("lead_hours")
-                        if a.empty:
-                            continue
-                        n_ref = int(a["n_init"].iloc[0])
-                        ax.plot(a["lead_day"], a[metric], color=s.color, lw=1.8,
-                                label=s.pretty)
-                    if n_ref is None:
-                        plt.close(fig); continue
+                    P.draw_skill_metric(ax, curves, metric, zero_line=zero, lw=1.8)
                     ax.set_title(f"{title_model} — {lev} hPa {label} ({area}, "
                                  f"mean of {n_ref} daily inits)")
-                    ax.set_xlabel("lead time (days)"); ax.set_ylabel(ylab)
-                    ax.grid(True, alpha=0.3)
-                    for sp in ("top", "right"):
-                        ax.spines[sp].set_visible(False)
+                    ax.set_ylabel(ylab)
+                    P.despine(ax)
                     if not single:
                         ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
                     fig.tight_layout()
