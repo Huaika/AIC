@@ -1,6 +1,12 @@
 #!/usr/bin/env python
-"""Day-of-year percentile climatology on the model grid -- shared by every
-definition (the 95th-percentile threshold for each daily statistic)."""
+"""Percentile climatologies on the model grid -- the threshold each heat-wave
+definition compares against. Two flavours:
+
+  * ``doy_percentile``    -- a per-calendar-day threshold with a +/-window (ours /
+                             mixture / ECMWF).
+  * ``season_percentile`` -- a SINGLE per-cell threshold from one season's values
+                             (EURO-CORDEX: the 99th pctile of May-Sep daily maxima).
+"""
 from __future__ import annotations
 
 import numpy as np
@@ -17,3 +23,14 @@ def doy_percentile(vals, doy, window, q, ndoy=366):
         if sel.shape[0]:
             out[d - 1] = np.quantile(sel, q, axis=0)
     return out
+
+
+def season_percentile(vals, months, season, q):
+    """Single per-cell q-quantile of `vals` (T, Y, X) over the calendar months in
+    ``season`` (inclusive ``(m_start, m_end)``, e.g. ``(5, 9)`` = May-Sep). Returns a
+    2-D ``thr[Y, X]`` -- one fixed threshold per cell, no day-of-year dependence
+    (the EURO-CORDEX heat-wave threshold)."""
+    m0, m1 = season
+    months = np.asarray(months)
+    sel = vals[(months >= m0) & (months <= m1)]
+    return np.quantile(sel, q, axis=0).astype("float32")

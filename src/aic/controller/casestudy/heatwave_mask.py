@@ -33,7 +33,6 @@ from aic.regions import region_mask
 
 CLIM_DIR = Path(os.environ.get(
     "HW_CACHE_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_clim"))
-REF_YEARS = range(1991, 2021)              # 1991-2020 reference climatology
 DEFAULT_WINDOW = int(os.environ.get("HW_WINDOW", "5"))   # +/- day-of-year window
 DEFAULT_COVER = float(os.environ.get("HW_CS_COVER", "0.02"))  # region area fraction
 DEFAULT_GAP = int(os.environ.get("HW_EPISODE_GAP", "2"))      # merge gap (days)
@@ -55,7 +54,7 @@ def active_mask_da(defn, year: int, window: int = DEFAULT_WINDOW,
     to ``region`` (cells outside the region box are False). Coordinates match the
     NeuralGCM 2.8deg grid, so it aligns with the rollouts/truth by coordinates."""
     tag, stats = defn.tag, list(defn.stats)
-    refs = [_load_stats(tag, y) for y in REF_YEARS]
+    refs = [_load_stats(tag, y) for y in defn.ref_range]   # per-definition ref period
     ref = xr.concat(refs, dim="time")
     tgt = _load_stats(tag, year)
     lat = tgt["latitude"].values
@@ -63,10 +62,12 @@ def active_mask_da(defn, year: int, window: int = DEFAULT_WINDOW,
 
     ref_stats = {s: ref[f"{tag}_{s}"].values for s in stats}
     tgt_stats = {s: tgt[f"{tag}_{s}"].values for s in stats}
-    ref_doy = pd.to_datetime(ref["time"].values).dayofyear.values
+    ref_t = pd.to_datetime(ref["time"].values)
+    ref_doy = ref_t.dayofyear.values
     tgt_doy = pd.to_datetime(tgt["time"].values).dayofyear.values
 
-    hot = DET.hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window)
+    hot = DET.hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window,
+                       ref_months=ref_t.month.values)
     active = DET.active_mask(hot, DET.MIN_DUR)           # (T, Y, X) bool
 
     latm, lonm = region_mask(lat, lon, region)

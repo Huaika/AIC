@@ -7,19 +7,30 @@ from __future__ import annotations
 
 import numpy as np
 
-from aic.controller.heatwave.climatology import doy_percentile
+from aic.controller.heatwave.climatology import doy_percentile, season_percentile
 
 MIN_DUR = 3
 
 
-def hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window):
+def hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window, ref_months=None):
     """Boolean hot mask (T, Y, X) for the target year under `defn`: for each daily
-    statistic in defn.stats, the target value exceeds the reference day-of-year
-    percentile threshold; the day is hot where ALL of them do (logical AND)."""
+    statistic in defn.stats, the target value exceeds the reference threshold; the
+    day is hot where ALL of them do (logical AND).
+
+    Windowed definitions (``defn.kind == "doy"``) compare against a per-calendar-day
+    +/-``window`` percentile. The EURO-CORDEX definition (``kind == "season"``)
+    compares against a single seasonal per-cell percentile (``ref_months`` gives the
+    calendar month of each reference day; ``window`` is ignored)."""
     hot = None
     for s in defn.stats:
-        thr = doy_percentile(ref_stats[s], ref_doy, window, defn.pct)
-        m = tgt_stats[s] > thr[tgt_doy - 1]
+        if defn.kind == "season":
+            if ref_months is None:
+                raise ValueError("seasonal definition needs ref_months")
+            thr = season_percentile(ref_stats[s], ref_months, defn.season, defn.pct)
+            m = tgt_stats[s] > thr[None, :, :]
+        else:
+            thr = doy_percentile(ref_stats[s], ref_doy, window, defn.pct)
+            m = tgt_stats[s] > thr[tgt_doy - 1]
         hot = m if hot is None else (hot & m)
     return hot
 

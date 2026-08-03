@@ -44,7 +44,8 @@ REGION_NAME = "the world" if REGION == "world" else REGION.replace("_", " ").tit
 REF = range(1991, 2021)
 # descriptive definition labels (variable + cadence), shared by all comparison plots
 DEF_LABELS = {"ours": "850hPa 00 UTC", "mixture": "850hPa 6-hourly",
-              "ecmwf": "2mT 6-hourly"}
+              "ecmwf": "2mT 6-hourly",
+              "cordex": "2mT max, May–Sep p99 (1971–2000)"}
 INK = "#222222"; MUTED = "#666666"; GRID = "#dddddd"
 
 
@@ -54,17 +55,19 @@ def shades(base_hex, n, fmax=0.66):
     return [tuple(base * (1 - f) + f) for f in np.linspace(0.0, fmax, n)]
 
 
-def _load_tag(tag, stats):
-    """Ref (concat 1991-2020) + target regridded daily stats for a variable tag,
-    cropped to REGION -> (ref_stats, ref_doy, tgt_stats, tgt_doy, latc, nlon)."""
+def _load_key(tag, stats, ref_years):
+    """Ref (concat ref_years, inclusive) + target regridded daily stats for a
+    (variable, reference-period), cropped to REGION ->
+    (ref_stats, ref_doy, ref_months, tgt_stats, tgt_doy, latc, nlon)."""
     ref = xr.concat([load_daily_regridded(DAILY_DIR, tag, y, stats, CACHE_DIR)
-                     for y in REF], dim="time")
+                     for y in range(ref_years[0], ref_years[1] + 1)], dim="time")
     tgt = load_daily_regridded(DAILY_DIR, tag, YEAR, stats, CACHE_DIR)
     lat = ref["latitude"].values; lon = ref["longitude"].values
     latm, lonm = (region_mask(lat, lon, REGION) if REGION != "world"
                   else (np.ones(len(lat), bool), np.ones(len(lon), bool)))
     arrs = lambda ds: {s: ds[f"{tag}_{s}"].values[:, latm][:, :, lonm] for s in stats}
-    return (arrs(ref), pd.to_datetime(ref["time"].values).dayofyear.values,
+    rt = pd.to_datetime(ref["time"].values)
+    return (arrs(ref), rt.dayofyear.values, rt.month.values,
             arrs(tgt), pd.to_datetime(tgt["time"].values).dayofyear.values,
             lat[latm], int(lonm.sum()))
 
@@ -77,28 +80,37 @@ def month_ticks(year):
 def main():
     FIGDIR.mkdir(parents=True, exist_ok=True)
     defs = D.selected(os.environ.get("HW_DEFS"))
-    tags = {d.tag: sorted({s for dd in defs if dd.tag == d.tag for s in dd.stats})
-            for d in defs}
+    # load ref+target once per (tag, reference-period); union the stats each key needs
+    keys = {}
+    for d in defs:
+        keys.setdefault((d.tag, d.ref_years), set()).update(d.stats)
     print(f"[compare] {YEAR} region={REGION} windows={WINDOWS} defs={[d.name for d in defs]}",
           flush=True)
-    data = {tag: _load_tag(tag, stats) for tag, stats in tags.items()}
+    data = {k: _load_key(k[0], sorted(sts), k[1]) for k, sts in keys.items()}
 
-    latc, nlon = data[defs[0].tag][4], data[defs[0].tag][5]
+    d0 = data[(defs[0].tag, defs[0].ref_years)]
+    latc, nlon = d0[5], d0[6]
     band = DET.cell_area_km2(latc, 128)
     area2d = np.repeat(band[:, None], nlon, axis=1)
     area_flat = area2d.reshape(-1)
-    tgt_doy = data[defs[0].tag][3]
+    tgt_doy = d0[4]
+
+    # windowed definitions sweep the +/-day window; seasonal ones (EURO-CORDEX) have
+    # a single window-independent threshold -> one curve.
+    windows_for = lambda d: [0] if d.kind == "season" else WINDOWS
 
     # detect for every (definition, window)
     res = {}
     for d in defs:
-        ref_stats, ref_doy, tgt_stats, td, _, _ = data[d.tag]
-        for w in WINDOWS:
-            hot = DET.hot_mask(d, ref_stats, ref_doy, tgt_stats, td, w)
+        ref_stats, ref_doy, ref_months, tgt_stats, td, _, _ = data[(d.tag, d.ref_years)]
+        for w in windows_for(d):
+            hot = DET.hot_mask(d, ref_stats, ref_doy, tgt_stats, td, w,
+                               ref_months=ref_months)
             dur, ar = DET.spell_events(hot, area_flat)
             daily = (DET.active_mask(hot) * area2d[None]).sum(axis=(1, 2)) / 1e6
             res[(d.name, w)] = (dur, ar, daily)
-            print(f"[compare] {d.name} +/-{w}d: {dur.size} events, "
+            wlab = "seasonal" if d.kind == "season" else f"+/-{w}d"
+            print(f"[compare] {d.name} {wlab}: {dur.size} events, "
                   f"{ar.sum()/1e6:.1f} x10^6 km^2", flush=True)
 
     rtag = "" if REGION == "world" else f"_{REGION}"
@@ -115,12 +127,14 @@ def main():
                            ("area", "Area affected (10$^6$ km$^2$)")]:
         fig, ax = plt.subplots(figsize=(7.8, 4.9))
         for d in defs:
-            cols = shades(D.COLORS[d.name], len(WINDOWS))
-            for i, w in enumerate(WINDOWS):
+            seasonal = d.kind == "season"
+            cols = None if seasonal else shades(D.COLORS[d.name], len(WINDOWS))
+            for i, w in enumerate(windows_for(d)):
                 dur, ar, _ = res[(d.name, w)]
                 y = (np.array([(dur == b).sum() for b in bins]) if metric == "count"
                      else np.array([ar[dur == b].sum() / 1e6 for b in bins]))
-                ax.plot(bins, y, color=cols[i], lw=1.5)
+                ax.plot(bins, y, color=(D.COLORS[d.name] if seasonal else cols[i]),
+                        lw=2.2 if seasonal else 1.5)
         ax.set_yscale("log")
         ax.set_title(f"Length of heat wave classification in {REGION_NAME} in "
                      f"{YEAR} by definitions (> {D.PTAG})",
@@ -144,10 +158,12 @@ def main():
     tp, tl = month_ticks(YEAR)
     fig, ax = plt.subplots(figsize=(9.2, 4.6))
     for d in defs:
-        cols = shades(D.COLORS[d.name], len(WINDOWS))
-        for i, w in enumerate(WINDOWS):
+        seasonal = d.kind == "season"
+        cols = None if seasonal else shades(D.COLORS[d.name], len(WINDOWS))
+        for i, w in enumerate(windows_for(d)):
             _, _, daily = res[(d.name, w)]
-            ax.plot(tgt_doy, daily, color=cols[i], lw=1.1)
+            ax.plot(tgt_doy, daily, color=(D.COLORS[d.name] if seasonal else cols[i]),
+                    lw=1.7 if seasonal else 1.1)
     ax.set_xticks(tp); ax.set_xticklabels(tl)
     ax.set_xlim(1, tgt_doy.max())
     ax.set_title(f"Area classified as heat wave in {REGION_NAME} in {YEAR} "
