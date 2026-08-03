@@ -94,6 +94,7 @@ class Source:
     kind: str = "forecast"
     _levels: list | None = field(default=None, repr=False)
     _grid: tuple | None = field(default=None, repr=False)
+    _mgrid: tuple | None = field(default=None, repr=False)
     _truth: dict = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -125,11 +126,46 @@ class Source:
                 self._levels = [int(x) for x in ds.level.values]
         return self._levels
 
-    def prediction_grid(self):
+    def native_grid(self):
+        """The grid the prediction files are actually stored on (2.8deg for
+        NeuralGCM, 0.25deg for GraphCast)."""
         if self._grid is None:
             with xr.open_dataset(self.pred_files()[0]) as ds:
                 self._grid = (ds.latitude.values.copy(), ds.longitude.values.copy())
         return self._grid
+
+    def model_grid(self):
+        """The common 2.8deg NeuralGCM grid everything is scored on (read from this
+        run's 2.8deg truth cache -- identical to the heat-wave / NeuralGCM grid)."""
+        if self._mgrid is None:
+            with xr.open_dataset(self._truth_nc("temperature")) as ds:
+                self._mgrid = (ds.latitude.values.copy(), ds.longitude.values.copy())
+        return self._mgrid
+
+    @property
+    def needs_regrid(self) -> bool:
+        """GraphCast rollouts (0.25deg) are interpolated onto the 2.8deg model grid;
+        NeuralGCM rollouts are already on it."""
+        return self.model == "graphcast"
+
+    def prediction_grid(self):
+        """The grid used for ALL downstream analysis: the common 2.8deg model grid
+        (so GraphCast and NeuralGCM, their truth and the heat-wave footprint are on
+        one grid). Equals the native grid for NeuralGCM."""
+        return self.model_grid() if self.needs_regrid else self.native_grid()
+
+    def regrid_field(self, da: xr.DataArray) -> xr.DataArray:
+        """Bilinearly interpolate a ``(..., latitude, longitude)`` field onto the
+        2.8deg model grid when this source is on a finer native grid (GraphCast
+        0.25deg); a no-op for NeuralGCM. Bilinear = linear in latitude and longitude,
+        following WeatherBench (Rasp et al. 2020), which regrids fields to the coarse
+        (~2.8deg) evaluation grid by bilinear interpolation (WeatherBench-2 likewise
+        regrids all forecasts + truth to one common grid before scoring)."""
+        if not self.needs_regrid:
+            return da
+        tlat, tlon = self.model_grid()
+        da = da.sortby("latitude").sortby("longitude")   # interp needs ascending
+        return da.interp(latitude=tlat, longitude=tlon, method="linear")
 
     # -- reference (truth) on THIS source's grid ----------------------------- #
     def _truth_nc(self, var: str) -> Path:
@@ -149,11 +185,9 @@ class Source:
                             kwargs={"fill_value": "extrapolate"}).load()
         native.close()
         clat, clon = self.prediction_grid()
-        # Put the (2.8deg model-grid) truth onto THIS source's prediction grid by
-        # label-nearest: exact for the same-grid NeuralGCM run, a nearest-neighbour
-        # upsample for GraphCast's finer 0.25deg grid. NO tolerance -- a tolerance
-        # would leave every non-coincident fine-grid cell NaN (which .sum() then
-        # silently turns into 0, corrupting the "truth").
+        # prediction_grid is the 2.8deg model grid for every source (GraphCast is
+        # regridded to it via regrid_field), and the truth cache is already on that
+        # grid, so this reindex is an exact alignment.
         out = out.reindex(latitude=clat, longitude=clon, method="nearest")
         self._truth[key] = out
         return out
@@ -199,7 +233,7 @@ class Source:
             ds = xr.open_dataset(f)
             init = pd.to_datetime(ds.attrs.get(
                 "init_date", f.stem.replace(f"pred_{self.year}_", "")))
-            da = ds[var].sel(level=levels).compute()
+            da = self.regrid_field(ds[var].sel(level=levels)).compute()
             lead_h = ds["lead_hours"].values.astype(int)
             for gp in points:
                 gm = GP.masked_area_mean(da, gp)
@@ -243,7 +277,7 @@ class Source:
             ds = xr.open_dataset(f)
             init = pd.to_datetime(ds.attrs.get(
                 "init_date", f.stem.replace(f"pred_{self.year}_", "")))
-            pred = ds[var].sel(level=levels)
+            pred = self.regrid_field(ds[var].sel(level=levels))
             tru = truth.sel(time=ds["valid_time"].values, method="nearest")
             tru = tru.assign_coords(time=pred["time"].values)
             diff = (pred - tru).compute()
@@ -296,7 +330,7 @@ class Source:
         acc, n = None, 0
         for i, f in enumerate(files):
             ds = xr.open_dataset(f)
-            t = ds[var].sel(level=levels)
+            t = self.regrid_field(ds[var].sel(level=levels))
             end = t.where(ds["lead_hours"] >= FINAL_DAY_LEAD_MIN, drop=True).mean("time")
             end = end.transpose("level", "latitude", "longitude")
             acc = end if acc is None else acc + end

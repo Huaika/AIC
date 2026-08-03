@@ -197,7 +197,7 @@ def _episode_day10(source, ep, year, var, lev):
     for f in files:
         ds = xr.open_dataset(f)
         hot10 = ds["lead_hours"] >= FINAL_LEAD_H
-        day10 = (ds[var].sel(level=lev).where(hot10, drop=True)
+        day10 = (source.regrid_field(ds[var].sel(level=lev)).where(hot10, drop=True)
                  .transpose("time", "latitude", "longitude"))
         if day10.sizes["time"] == 0:
             ds.close(); continue
