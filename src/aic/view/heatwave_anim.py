@@ -319,9 +319,12 @@ def main():
         if not eps:
             raise SystemExit(f"no {CS_DEF} episodes in {REGION} {YEAR} -> no GIF")
         spans = [list(range(e.span[0], e.span[1] + 1)) for e in eps]
-        print(f"[anim] {CS_DEF} ({defn.label}): {len(spans)} episode(s): " + ", ".join(
-            f"{times[s[0]].date()}..{times[s[-1]].date()} ({len(s)}d)" for s in spans),
-            flush=True)
+        # each event highlights ONLY its own (spatio-temporally connected) cells
+        ep_hl = [e.mask[:, latm][:, :, lonm][:, :, order] for e in eps]
+        print(f"[anim] {CS_DEF} ({defn.label}): {len(spans)} spatio-temporal event(s): "
+              + ", ".join(f"{times[s[0]].date()}..{times[s[-1]].date()}"
+                          f"({len(s)}d,{int(e.n_cells)}c)" for s, e in zip(spans, eps)),
+              flush=True)
     else:
         clim = clim.isel(latitude=latm, longitude=lonm).isel(longitude=order)
         active, ext, z = detect(vals, times, clim)      # z = T850 anomaly (colouring)
@@ -341,34 +344,43 @@ def main():
             (episodes[-1].append(int(d)) if d - episodes[-1][-1] <= EPISODE_GAP
              else episodes.append([int(d)]))
         spans = [list(range(ep[0], ep[-1] + 1)) for ep in episodes]
+        ep_hl = [active for _ in spans]     # time-based episodes share the daily mask
         print(f"[anim] {len(spans)} major heat-wave episode(s): " + ", ".join(
             f"{times[s[0]].date()}..{times[s[-1]].date()} ({len(s)}d)" for s in spans),
             flush=True)
 
-    # render each needed frame ONCE (RGB), keyed by day index (highlight MAJOR cells)
-    need = sorted({t for span in spans for t in span})
+    # render each (event, day) frame ONCE, highlighting THAT event's cells. The
+    # subtitle coverage is the event's OWN area fraction (matches its cell count) for
+    # a definition-driven run, else the day's 99th-pctile coverage (the "ours" mode).
+    awc2d = np.repeat(np.cos(np.deg2rad(latc))[:, None], len(lonc), axis=1)
+    reg_area = awc2d.sum()
     rgb = {}
-    for k, t in enumerate(need):
-        rgb[t] = frame(lon2d, lat2d, z[t], active[t], times[t],
-                       w, e, s, n, REGION, int(active[t].sum()), ext_cover[t])
-        if k % 10 == 0:
-            print(f"    rendered {k+1}/{len(need)}", flush=True)
+    for ei, span in enumerate(spans):
+        hlm = ep_hl[ei]
+        for t in span:
+            hl = hlm[t]
+            cov = float((hl * awc2d).sum() / reg_area) if CS_DEF else ext_cover[t]
+            rgb[(ei, t)] = frame(lon2d, lat2d, z[t], hl, times[t], w, e, s, n,
+                                 REGION, int(hl.sum()), cov)
+    print(f"    rendered {len(rgb)} frame(s) over {len(spans)} event(s)", flush=True)
 
     # ONE palette shared by every frame of every gif -> identical gradient/colouring
-    pal = shared_palette([rgb[t] for t in need])
-    quant = {t: quantize(rgb[t], pal) for t in need}
+    keys = list(rgb)
+    pal = shared_palette([rgb[k] for k in keys])
+    quant = {k: quantize(rgb[k], pal) for k in keys}
 
     # one folder per definition (cordex / ours / ...)
     subdir = GIF_DIR / (CS_DEF or "ours")
     subdir.mkdir(parents=True, exist_ok=True)
     tag = "" if CS_DEF else f"_w{WINDOW}_major{int(MAJOR_Q*100)}c{int(MAJOR_COVER*100)}"
-    for span in spans:
+    for ei, span in enumerate(spans):
         a, b = times[span[0]].date(), times[span[-1]].date()
-        out = subdir / f"heatwave{YEAR}_{REGION}{tag}_{a}_{b}.gif"
-        save_gif([quant[t] for t in span], out)
+        # ei in the name: distinct spatial events can share a day range
+        out = subdir / f"heatwave{YEAR}_{REGION}{tag}_ev{ei+1:02d}_{a}_{b}.gif"
+        save_gif([quant[(ei, t)] for t in span], out)
         print(f"[anim] wrote {out.name} ({len(span)} frames, "
               f"{out.stat().st_size / 1e6:.2f} MB)", flush=True)
-    print(f"[anim] DONE -> {len(spans)} GIF(s) in {GIF_DIR}", flush=True)
+    print(f"[anim] DONE -> {len(spans)} GIF(s) in {subdir}", flush=True)
 
 
 if __name__ == "__main__":

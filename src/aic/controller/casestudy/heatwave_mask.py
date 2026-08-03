@@ -37,6 +37,10 @@ DEFAULT_WINDOW = int(os.environ.get("HW_WINDOW", "5"))   # +/- day-of-year windo
 DEFAULT_COVER = float(os.environ.get("HW_CS_COVER", "0.02"))  # region area fraction
 DEFAULT_GAP = int(os.environ.get("HW_EPISODE_GAP", "2"))      # merge gap (days)
 DEFAULT_MIN_DAYS = int(os.environ.get("HW_CS_MIN_DAYS", "3"))  # min episode length
+# cells farther apart than this Manhattan distance (in grid cells) are NOT the same
+# heat wave -- unless a later day bridges them within this reach (spatio-temporal
+# connectivity). 0 falls back to the old time-only merging.
+DEFAULT_MANHATTAN = int(os.environ.get("HW_MANHATTAN", "4"))
 
 
 def _load_stats(tag: str, year: int) -> xr.Dataset:
@@ -102,16 +106,18 @@ def region_coverage(active_da: xr.DataArray, region: str = "europe") -> np.ndarr
 
 @dataclass
 class Episode:
-    """One temporally connected heat-wave episode (mixture/p99 etc.)."""
+    """One spatio-temporally connected heat-wave event (a single physical heat wave:
+    cells linked in space (Manhattan <= max) and time (gap), possibly merging later)."""
     idx: int                       # 1-based episode number within the year
-    start: pd.Timestamp            # first day of the episode span
-    end: pd.Timestamp              # last day of the episode span
-    n_days: int
-    peak_date: pd.Timestamp        # day of maximum region coverage
+    start: pd.Timestamp            # first day of the event
+    end: pd.Timestamp              # last day of the event
+    n_days: int                    # number of distinct active days
+    peak_date: pd.Timestamp        # day of maximum coverage by THIS event's cells
     peak_cover: float              # max cos-lat area fraction of the region
     span: tuple = field(repr=False)          # (i0, i1) inclusive time-index span
     footprint: xr.DataArray = field(repr=False)  # 2-D bool (lat,lon): union of cells
     n_cells: int = 0               # number of cells in the footprint
+    mask: object = field(default=None, repr=False)  # (T,Y,X) bool: this event's cells
 
     @property
     def tag(self) -> str:
@@ -122,35 +128,100 @@ class Episode:
         return f"{self.start:%Y-%m-%d}..{self.end:%Y-%m-%d}"
 
 
+def _st_components(active, gap, max_manhattan):
+    """Spatio-temporal connected components of the active cells via union-find: two
+    active cells join if within `max_manhattan` grid cells (Manhattan) AND within
+    `gap` days. A later bridging day merges earlier-separate blobs ("connected
+    later"). Returns (pts[N,3] (t,y,x), list of member-index lists)."""
+    pts = np.argwhere(active)
+    n = len(pts)
+    if n == 0:
+        return pts, []
+    parent = list(range(n))
+
+    def find(a):
+        r = a
+        while parent[r] != r:
+            r = parent[r]
+        while parent[a] != r:
+            parent[a], a = r, parent[a]
+        return r
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    T = active.shape[0]
+    by_day = [dict() for _ in range(T)]
+    for i, (t, y, x) in enumerate(pts):
+        by_day[t][(int(y), int(x))] = i
+    m = max_manhattan
+    offs = [(dy, dx) for dy in range(-m, m + 1)
+            for dx in range(-(m - abs(dy)), (m - abs(dy)) + 1)]
+    for i, (t, y, x) in enumerate(pts):
+        t, y, x = int(t), int(y), int(x)
+        for dt in range(0, gap + 1):
+            d = t + dt
+            if d >= T:
+                break
+            bd = by_day[d]
+            if not bd:
+                continue
+            for dy, dx in offs:
+                j = bd.get((y + dy, x + dx))
+                if j is not None:
+                    union(i, j)
+    groups = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(i)
+    return pts, list(groups.values())
+
+
 def episodes(active_da: xr.DataArray, region: str = "europe",
              cover_thr: float = DEFAULT_COVER, gap: int = DEFAULT_GAP,
-             min_days: int = DEFAULT_MIN_DAYS) -> list[Episode]:
-    """Split the active mask into episodes: runs of days whose region coverage
-    exceeds ``cover_thr``, merged across gaps of <= ``gap`` days, kept if the span
-    is >= ``min_days``. Each episode's FOOTPRINT is the union of cells active on any
-    day of its (gap-filled, contiguous) span."""
-    cov = region_coverage(active_da, region)
+             min_days: int = DEFAULT_MIN_DAYS,
+             max_manhattan: int = DEFAULT_MANHATTAN) -> list[Episode]:
+    """Split the active mask into distinct heat waves by SPATIO-TEMPORAL connectivity:
+    active cells belong to the same event when they are within `max_manhattan` grid
+    cells (Manhattan) and within `gap` days -- so spatially separated heat waves are
+    kept apart unless a later day bridges them. An event is kept if it spans
+    >= `min_days` distinct days and reaches >= `cover_thr` of the region at its peak.
+    Each event carries its 2-D FOOTPRINT (union of its cells) and its (T,Y,X) mask."""
+    active = active_da.values
+    T, Y, X = active.shape
     times = pd.to_datetime(active_da["time"].values)
-    qual = np.where(cov >= cover_thr)[0]
-    if qual.size == 0:
-        return []
-    groups = [[int(qual[0])]]
-    for d in qual[1:]:
-        (groups[-1].append(int(d)) if d - groups[-1][-1] <= gap
-         else groups.append([int(d)]))
-    eps: list[Episode] = []
-    for g in groups:
-        i0, i1 = g[0], g[-1]
-        if (i1 - i0 + 1) < min_days:
+    lat = active_da["latitude"].values
+    lon = active_da["longitude"].values
+    latm, lonm = region_mask(lat, lon, region)
+    aw = np.where(latm, np.cos(np.deg2rad(lat)), 0.0)[:, None] * lonm[None, :].astype(float)
+    region_area = aw.sum()
+
+    pts, comps = _st_components(active, gap, max_manhattan)
+    raw = []
+    for members in comps:
+        P = pts[members]                                  # (M, 3): t, y, x
+        days = P[:, 0]
+        if len(np.unique(days)) < min_days:
             continue
-        sl = slice(i0, i1 + 1)
-        fp = active_da.isel(time=sl).any("time")         # 2-D bool union
-        cwin = cov[i0:i1 + 1]
-        pk = i0 + int(np.argmax(cwin))
+        cm = np.zeros((T, Y, X), bool)
+        cm[P[:, 0], P[:, 1], P[:, 2]] = True
+        cov = (cm * aw[None]).sum(axis=(1, 2)) / region_area
+        pk = int(np.argmax(cov))
+        if float(cov[pk]) < cover_thr:
+            continue
+        fp2d = cm.any(0)
+        raw.append((int(days.min()), int(days.max()), int(len(np.unique(days))), pk,
+                    float(cov[pk]), fp2d, cm))
+    raw.sort(key=lambda r: (r[0], -r[4]))
+    eps: list[Episode] = []
+    for k, (i0, i1, ndays, pk, pcov, fp2d, cm) in enumerate(raw):
+        fp = xr.DataArray(fp2d, dims=("latitude", "longitude"),
+                          coords={"latitude": lat, "longitude": lon})
         eps.append(Episode(
-            idx=len(eps) + 1, start=times[i0], end=times[i1], n_days=i1 - i0 + 1,
-            peak_date=times[pk], peak_cover=float(cov[pk]), span=(i0, i1),
-            footprint=fp, n_cells=int(fp.values.sum())))
+            idx=k + 1, start=times[i0], end=times[i1], n_days=ndays,
+            peak_date=times[pk], peak_cover=pcov, span=(i0, i1),
+            footprint=fp, n_cells=int(fp2d.sum()), mask=cm))
     return eps
 
 
