@@ -82,4 +82,9 @@ def masked_area_mean(da: xr.DataArray, points) -> xr.DataArray:
     """
     mask = points.mask if isinstance(points, GridPoints) else points
     w = np.cos(np.deg2rad(da.latitude))
+    # Fast path for a full-grid ("world") selection: skip the .where (a full-array
+    # copy + NaN scan on every field, costly at 0.25deg) and reduce directly.
+    marr = mask.values if hasattr(mask, "values") else np.asarray(mask)
+    if marr.ndim == 2 and marr.all():
+        return da.weighted(w).mean(["latitude", "longitude"])
     return da.where(mask).weighted(w).mean(["latitude", "longitude"])

@@ -155,7 +155,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
     coloured by the shared model palette."""
     meta = C.VARIABLES[var]
     label, units = meta["label"], meta["units"]
-    curves = {}            # model -> aggregated (sorted) dataframe
+    curves = []            # list of (source, aggregated sorted dataframe)
     n_any = None
     for src in sources:
         gp = footprint_points(src, ep, year)
@@ -168,7 +168,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
         agg = drift_view.aggregate(per)
         a = agg[(agg["region"] == gp.key) & (agg["level"] == lev)].sort_values("lead_hours")
         if not a.empty:
-            curves[src] = a
+            curves.append((src, a))
             n_any = int(a["n_init"].iloc[0])
     if not curves:
         return
@@ -179,7 +179,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
         fig, ax = plt.subplots(figsize=(6.8, 4.4))
         if zero:
             ax.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
-        for src, a in curves.items():
+        for src, a in curves:
             ax.plot(a["lead_day"], a[metric], color=src.color, lw=1.9,
                     label=src.pretty)
         ax.set_title(ttl, fontsize=11, color=INK, loc="left")

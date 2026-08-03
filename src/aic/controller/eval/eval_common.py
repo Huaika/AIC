@@ -124,6 +124,13 @@ def _resolve_run() -> str:
     run = os.environ.get("EVAL_RUN", "").strip()
     if run:
         return run
+    # EVAL_RUNS (explicit run-key list, e.g. multi-year OOD): the first key is the
+    # representative run for the module globals (OUTDIR / FIG_ROOT / MODEL / ...).
+    runs = os.environ.get("EVAL_RUNS", "").strip()
+    if runs:
+        first = runs.replace(",", " ").split()[0].strip()
+        if first in RUNS:
+            return first
     srcs = os.environ.get("EVAL_SOURCES", "").strip()
     if srcs:
         model = srcs.replace(",", " ").split()[0].strip()

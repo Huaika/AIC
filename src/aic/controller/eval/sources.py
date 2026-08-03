@@ -149,7 +149,12 @@ class Source:
                             kwargs={"fill_value": "extrapolate"}).load()
         native.close()
         clat, clon = self.prediction_grid()
-        out = out.reindex(latitude=clat, longitude=clon, method="nearest", tolerance=1e-6)
+        # Put the (2.8deg model-grid) truth onto THIS source's prediction grid by
+        # label-nearest: exact for the same-grid NeuralGCM run, a nearest-neighbour
+        # upsample for GraphCast's finer 0.25deg grid. NO tolerance -- a tolerance
+        # would leave every non-coincident fine-grid cell NaN (which .sum() then
+        # silently turns into 0, corrupting the "truth").
+        out = out.reindex(latitude=clat, longitude=clon, method="nearest")
         self._truth[key] = out
         return out
 
