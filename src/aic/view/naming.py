@@ -34,7 +34,9 @@ VAR_ABBR = {
 # plot-type token per plot family
 PLOTTYPE = {
     "spaghetti": "spaghetti",
-    "drift_stats": "drift-rmse-bias",
+    "drift_stats": "drift-rmse-bias",   # legacy combined twin-axis (still accepted)
+    "drift_rmse": "drift-rmse",         # RMSE and bias are now SEPARATE figures
+    "drift_bias": "drift-bias",
     "drift_maps": "drift-map",
 }
 

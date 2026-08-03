@@ -96,6 +96,25 @@ RUNS = {
         truth_kind="era5",
         truth_src=f"{WS}/ka_hc5935-ai-climate/era5_1955/inputs",
     ),
+    # GraphCast 2026 (partial year): same ERA5 truth as neuralgcm era5_2026 (staged
+    # in ka_dm9435's workspace, Jan..Jul), truth regridded to the 0.25deg pred grid.
+    "graphcast_era5_2026": dict(
+        year=2026,
+        pred_dir=f"{WS}/ka_dm9435-ai-climate/graphcast_era5_2026/predictions",
+        ref_label="GraphCast ERA5 2026",
+        truth_kind="era5",
+        truth_src=f"{WS}/ka_dm9435-ai-climate/era5_2026/inputs",
+    ),
+    # GraphCast on the NextGEMS-2049 out-of-distribution future climate (reference =
+    # NextGEMS itself, same 3D file as the neuralgcm nextgems2049 run).
+    "graphcast_nextgems_2049": dict(
+        year=2049,
+        pred_dir=f"{WS}/ka_dm9435-ai-climate/graphcast_nextgems_2049/predictions",
+        ref_label="GraphCast NextGEMS-2049",
+        truth_kind="nextgems",
+        truth_src=(f"{WS}/ka_je2428-nextgems_2049/"
+                   "3D_nextgems_2049_6hourly_0.25deg_lat-lon.nc"),
+    ),
 }
 
 def _resolve_run() -> str:

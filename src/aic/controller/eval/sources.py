@@ -38,16 +38,35 @@ import xarray as xr
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import gridpoints as GP
 
-# Pretty model names + a stable, colour-blind-friendly palette (index = position
-# in the EVAL_SOURCES list). The reference line is always drawn black.
+# Pretty model names + a stable, colour-blind-friendly palette (fallback for a 3rd+
+# model). The reference line is always drawn black.
 MODEL_PRETTY = {"neuralgcm": "NeuralGCM", "graphcast": "GraphCast"}
 PALETTE = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf"]
+
+# SINGLE SOURCE OF TRUTH for model line colours, shared by every view script
+# (spaghetti / drift / drift maps / case study) so a model is the same colour
+# everywhere. The reference (ERA5 / NextGEMS) line is always REF_COLOR.
+MODEL_COLORS = {"neuralgcm": "#1f77b4", "graphcast": "#d62728"}
+REF_COLOR = "black"
+# line styles to tell apart YEARS / rollout-windows of the SAME model on one axis
+# (the multi-year OOD spaghetti): solid, dashed, dotted, dash-dot, ...
+YEAR_LINESTYLES = ["-", "--", ":", "-.", (0, (3, 1, 1, 1))]
 
 FINAL_DAY_LEAD_MIN = 216  # >= 216 h == the day-10 slab (drift maps)
 
 
 def _model_of(run: str) -> str:
     return "graphcast" if run.startswith("graphcast") else "neuralgcm"
+
+
+def model_color(model: str) -> str:
+    """The shared colour for a model (fallback to the palette for a 3rd+ model)."""
+    return MODEL_COLORS.get(model, PALETTE[0])
+
+
+def year_linestyle(index: int):
+    """A line style distinguishing the ``index``-th year/window of one model."""
+    return YEAR_LINESTYLES[index % len(YEAR_LINESTYLES)]
 
 
 def run_for(model: str, dataset: str, year: int) -> str | None:
@@ -78,7 +97,7 @@ class Source:
     _truth: dict = field(default_factory=dict, repr=False)
 
     @classmethod
-    def from_run(cls, run: str, color: str = "#1f77b4") -> "Source":
+    def from_run(cls, run: str, color: str | None = None) -> "Source":
         if run not in C.RUNS:
             raise SystemExit(f"unknown run {run!r}; choose from {list(C.RUNS)}")
         cfg = C.RUNS[run]
@@ -86,7 +105,8 @@ class Source:
             run=run, model=_model_of(run), dataset=cfg["truth_kind"],
             year=int(cfg["year"]), ref_label=cfg["ref_label"],
             pred_dir=Path(cfg["pred_dir"]),
-            outdir=C.RESULTS_ROOT / f"results_eval_{run}", color=color)
+            outdir=C.RESULTS_ROOT / f"results_eval_{run}",
+            color=color if color is not None else model_color(_model_of(run)))
 
     @property
     def pretty(self) -> str:
@@ -296,6 +316,15 @@ class Source:
 def resolve_sources() -> list[Source]:
     """EVAL_SOURCES (models) + EVAL_YEAR (+ EVAL_DATASET) -> [Source]; or, if
     EVAL_SOURCES is unset, a single Source from EVAL_RUN (backward compatible)."""
+    # EVAL_RUNS: explicit run-key list (any model/dataset/year mix on one plot, e.g.
+    # the multi-year OOD spaghetti). Colour by model; years are told apart downstream.
+    env_runs = os.environ.get("EVAL_RUNS", "").strip()
+    if env_runs:
+        runs = [r.strip() for r in env_runs.replace(",", " ").split() if r.strip()]
+        srcs = [Source.from_run(r, color=model_color(_model_of(r))) for r in runs]
+        print(f"[sources] {len(srcs)} explicit run(s): "
+              + ", ".join(f"{s.pretty}({s.run})" for s in srcs))
+        return srcs
     env = os.environ.get("EVAL_SOURCES", "").strip()
     if not env:
         return [Source.from_run(C.RUN, color=PALETTE[0])]
@@ -312,7 +341,7 @@ def resolve_sources() -> list[Source]:
             raise SystemExit(
                 f"no run for model={m!r} dataset={dataset!r} year={year}; "
                 f"known runs: {list(C.RUNS)}")
-        srcs.append(Source.from_run(run, color=PALETTE[i % len(PALETTE)]))
+        srcs.append(Source.from_run(run, color=model_color(m)))
     labels = ", ".join(f"{s.pretty}({s.run})" for s in srcs)
     print(f"[sources] {len(srcs)}: {labels}")
     return srcs

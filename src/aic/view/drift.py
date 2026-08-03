@@ -59,52 +59,43 @@ def plot_variable(sources, var, levels, regions, periods):
             figdir = S.figure_dir(sources, period, reg, var, "drift_stats")
             area = "global" if reg == "world" else reg
             for lev in C.render_levels(levels):
-                fig, ax_rmse = plt.subplots(figsize=(6.5, 4.4))
-                ax_bias = ax_rmse.twinx()
-                n_ref = None
-                for s in sources:
-                    if s.run not in aggs:
-                        continue
-                    ar = aggs[s.run]
-                    a = ar[(ar["region"] == reg) & (ar["level"] == lev)] \
-                        .sort_values("lead_hours")
-                    if a.empty:
-                        continue
-                    n_ref = int(a["n_init"].iloc[0])
-                    if single:
-                        rc, bc = "#1f77b4", "#d62728"
-                        rlab, blab = "RMSE", "bias"
-                    else:
-                        rc = bc = s.color
-                        rlab, blab = f"{s.pretty} RMSE", f"{s.pretty} bias"
-                    ax_rmse.plot(a["lead_day"], a["rmse"], color=rc, lw=1.8, label=rlab)
-                    ax_bias.plot(a["lead_day"], a["bias"], color=bc, lw=1.4,
-                                 ls="-" if single else "--", label=blab)
-                ax_bias.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
+                # RMSE and bias are drawn as SEPARATE figures (readability); each
+                # overlays one line per source, coloured by the shared model palette.
                 title_model = sources[0].ref_label if single else \
                     " vs ".join(dict.fromkeys(s.pretty for s in sources))
-                ax_rmse.set_title(f"{title_model} — {lev} hPa {label} ({area}, "
-                                  f"mean of {n_ref} daily inits)")
-                ax_rmse.set_xlabel("lead time (days)")
-                if single:
-                    ax_rmse.set_ylabel(f"RMSE [{units}]", color="#1f77b4")
-                    ax_bias.set_ylabel(f"mean bias [{units}]", color="#d62728")
-                    ax_rmse.tick_params(axis="y", labelcolor="#1f77b4")
-                    ax_bias.tick_params(axis="y", labelcolor="#d62728")
-                else:
-                    ax_rmse.set_ylabel(f"RMSE [{units}] (solid)")
-                    ax_bias.set_ylabel(f"mean bias [{units}] (dashed)")
-                    h1, l1 = ax_rmse.get_legend_handles_labels()
-                    h2, l2 = ax_bias.get_legend_handles_labels()
-                    ax_rmse.legend(h1 + h2, l1 + l2, loc="upper left",
-                                   fontsize=8, framealpha=0.9)
-                ax_rmse.grid(True, alpha=0.3)
-                fig.tight_layout()
-                out = figdir / fig_naming.figure_name(
-                    S.model_token(sources), sources[0].dataset, reg, var, lev,
-                    sources[0].year, fig_naming.months_token(period),
-                    "drift_stats", ext="pdf")
-                fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+                for metric, ylab, zero, kind in [
+                        ("rmse", f"RMSE [{units}]", False, "drift_rmse"),
+                        ("bias", f"mean bias [{units}]", True, "drift_bias")]:
+                    fig, ax = plt.subplots(figsize=(6.5, 4.4))
+                    if zero:
+                        ax.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
+                    n_ref = None
+                    for s in sources:
+                        if s.run not in aggs:
+                            continue
+                        ar = aggs[s.run]
+                        a = ar[(ar["region"] == reg) & (ar["level"] == lev)] \
+                            .sort_values("lead_hours")
+                        if a.empty:
+                            continue
+                        n_ref = int(a["n_init"].iloc[0])
+                        ax.plot(a["lead_day"], a[metric], color=s.color, lw=1.8,
+                                label=s.pretty)
+                    if n_ref is None:
+                        plt.close(fig); continue
+                    ax.set_title(f"{title_model} — {lev} hPa {label} ({area}, "
+                                 f"mean of {n_ref} daily inits)")
+                    ax.set_xlabel("lead time (days)"); ax.set_ylabel(ylab)
+                    ax.grid(True, alpha=0.3)
+                    for sp in ("top", "right"):
+                        ax.spines[sp].set_visible(False)
+                    if not single:
+                        ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
+                    fig.tight_layout()
+                    out = figdir / fig_naming.figure_name(
+                        S.model_token(sources), sources[0].dataset, reg, var, lev,
+                        sources[0].year, fig_naming.months_token(period), kind, ext="pdf")
+                    fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
         print(f"  saved {C.period_dir_name(period)} x {len(regions)} region(s)")
 
 

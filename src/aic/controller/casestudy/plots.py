@@ -55,11 +55,13 @@ INK = "#222222"; GRID = "#dddddd"
 # episode -> grid-point set + rollout file window
 # --------------------------------------------------------------------------- #
 def footprint_points(source: S.Source, ep: HM.Episode, year: int) -> GP.GridPoints:
-    """The episode's footprint as a GridPoints on the source's prediction grid
-    (coords reassigned to the pred grid so it aligns with rollouts/truth exactly)."""
+    """The episode's footprint as a GridPoints on the source's prediction grid.
+
+    The footprint is detected on the 2.8deg grid; nearest-neighbour reindexing onto
+    the source grid makes it align by coordinates with that source's rollouts/truth
+    (identity for the NeuralGCM 2.8deg grid, an upsample for GraphCast's 0.25deg)."""
     lat, lon = source.prediction_grid()
-    m = xr.DataArray(ep.footprint.values, dims=("latitude", "longitude"),
-                     coords={"latitude": lat, "longitude": lon})
+    m = ep.footprint.reindex(latitude=lat, longitude=lon, method="nearest")
     return GP.GridPoints.from_mask(f"hw_{year}_{ep.tag}", m, region_extent("europe"))
 
 
@@ -85,42 +87,49 @@ def fig_dir(defn, year: int, ep: HM.Episode) -> Path:
 # --------------------------------------------------------------------------- #
 # Lagrangian: spaghetti over the episode window (footprint area-mean)
 # --------------------------------------------------------------------------- #
-def spaghetti_episode(source, defn, year, ep, gp, var, lev):
+def spaghetti_episode(sources, defn, year, ep, var, lev):
     meta = C.VARIABLES[var]
     label, units = meta["label"], meta["units"]
     v0 = ep.start - pd.Timedelta(days=BEFORE)
     v1 = ep.end + pd.Timedelta(days=AFTER)
-    files = episode_files(source, ep, BEFORE, 0)     # inits rolling into the event
-    if not files:
-        print(f"  [spaghetti] {ep.tag} {var}: no rollouts in window; skip")
-        return
-    roll = source.rollout_gmean(var, meta["short"], [lev], [gp],
-                                files=files, cache=False)
-
-    # ERA5 reference: footprint-area-mean, daily, over the valid window
-    truth = source.truth_at_levels(var, [lev])
-    ref = GP.masked_area_mean(truth.sel(level=lev), gp)
-    ref = ref.to_dataframe(name="ref").reset_index()
-    ref["date"] = pd.to_datetime(ref["time"]).dt.floor("D")
-    ref = ref.groupby("date", as_index=False)["ref"].mean()
-    ref = ref[(ref["date"] >= v0) & (ref["date"] <= v1)]
 
     fig, ax = plt.subplots(figsize=(12, 4.8))
     ax.axvspan(ep.start, ep.end, color="#f2c14e", alpha=0.25, zorder=0,
                label="heat-wave episode")
-    r = roll.copy()
-    r["valid_time"] = r["init_date"] + pd.to_timedelta(r["lead_hours"], unit="h")
-    r["lead_day_idx"] = (r["lead_hours"] // 24).astype(int)
-    for d in sorted(r["init_date"].unique()):
-        g = r[r["init_date"] == d]
-        daily = (g.groupby("lead_day_idx")
-                   .agg(vt=("valid_time", "mean"), val=("pred_gmean", "mean"))
-                   .reset_index())
-        ax.plot(daily["vt"], daily["val"], color=source.color, lw=0.7, alpha=0.55,
-                zorder=2)
-    ax.plot([], [], color=source.color, lw=1.6, label=f"{source.pretty} 10-day rollout")
+    drew = False
+    for src in sources:
+        gp = footprint_points(src, ep, year)
+        files = episode_files(src, ep, BEFORE, 0)    # inits rolling into the event
+        if not files:
+            print(f"  [spaghetti] {ep.tag} {var} {src.model}: no rollouts; skip")
+            continue
+        roll = src.rollout_gmean(var, meta["short"], [lev], [gp],
+                                 files=files, cache=False)
+        r = roll.copy()
+        r["valid_time"] = r["init_date"] + pd.to_timedelta(r["lead_hours"], unit="h")
+        r["lead_day_idx"] = (r["lead_hours"] // 24).astype(int)
+        for d in sorted(r["init_date"].unique()):
+            g = r[r["init_date"] == d]
+            daily = (g.groupby("lead_day_idx")
+                       .agg(vt=("valid_time", "mean"), val=("pred_gmean", "mean"))
+                       .reset_index())
+            ax.plot(daily["vt"], daily["val"], color=src.color, lw=0.7, alpha=0.55,
+                    zorder=2)
+        ax.plot([], [], color=src.color, lw=1.6, label=f"{src.pretty} 10-day rollout")
+        drew = True
+    if not drew:
+        plt.close(fig); return
+
+    # ERA5 reference: footprint-area-mean, daily, over the valid window (from src 0)
+    ref_src = sources[0]
+    truth = ref_src.truth_at_levels(var, [lev])
+    ref = GP.masked_area_mean(truth.sel(level=lev), footprint_points(ref_src, ep, year))
+    ref = ref.to_dataframe(name="ref").reset_index()
+    ref["date"] = pd.to_datetime(ref["time"]).dt.floor("D")
+    ref = ref.groupby("date", as_index=False)["ref"].mean()
+    ref = ref[(ref["date"] >= v0) & (ref["date"] <= v1)]
     ax.plot(ref["date"], ref["ref"], color="black", lw=2.2, zorder=3,
-            label=f"{source.ref_label} (daily mean)")
+            label=f"{ref_src.ref_label} (daily mean)")
     ax.set_title(f"Europe heat-wave {ep.label} — footprint-mean {label} @ {lev} hPa "
                  f"({defn.name}, > {D.PTAG})", fontsize=12, color=INK, loc="left")
     ax.set_ylabel(f"{label} @{lev}hPa footprint mean [{units}]", color=INK)
@@ -140,50 +149,62 @@ def spaghetti_episode(source, defn, year, ep, gp, var, lev):
 # --------------------------------------------------------------------------- #
 # Lagrangian: RMSE + bias vs lead over the footprint (episode rollouts)
 # --------------------------------------------------------------------------- #
-def rmse_episode(source, defn, year, ep, gp, var, lev):
+def skill_episode(sources, defn, year, ep, var, lev):
+    """Two SEPARATE Lagrangian figures over the footprint (kept apart for
+    readability): RMSE vs lead, and mean bias vs lead. One line per model,
+    coloured by the shared model palette."""
     meta = C.VARIABLES[var]
     label, units = meta["label"], meta["units"]
-    files = episode_files(source, ep, BEFORE, 0)
-    if not files:
-        print(f"  [rmse] {ep.tag} {var}: no rollouts in window; skip")
+    curves = {}            # model -> aggregated (sorted) dataframe
+    n_any = None
+    for src in sources:
+        gp = footprint_points(src, ep, year)
+        files = episode_files(src, ep, BEFORE, 0)
+        if not files:
+            print(f"  [skill] {ep.tag} {var} {src.model}: no rollouts; skip")
+            continue
+        per = src.drift_per_init(var, meta["short"], [lev], [gp],
+                                 files=files, cache=False)
+        agg = drift_view.aggregate(per)
+        a = agg[(agg["region"] == gp.key) & (agg["level"] == lev)].sort_values("lead_hours")
+        if not a.empty:
+            curves[src] = a
+            n_any = int(a["n_init"].iloc[0])
+    if not curves:
         return
-    per = source.drift_per_init(var, meta["short"], [lev], [gp],
-                                files=files, cache=False)
-    agg = drift_view.aggregate(per)
-    a = agg[(agg["region"] == gp.key) & (agg["level"] == lev)].sort_values("lead_hours")
-    if a.empty:
-        print(f"  [rmse] {ep.tag} {var}: empty aggregate; skip")
-        return
-    fig, axr = plt.subplots(figsize=(6.6, 4.4))
-    axb = axr.twinx()
-    axr.plot(a["lead_day"], a["rmse"], color="#1f77b4", lw=1.9, label="RMSE")
-    axb.plot(a["lead_day"], a["bias"], color="#d62728", lw=1.5, label="bias")
-    axb.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
-    axr.set_title(f"Europe heat-wave {ep.label} — footprint {label}@{lev} hPa "
-                  f"(mean of {int(a['n_init'].iloc[0])} rollouts)",
-                  fontsize=11, color=INK, loc="left")
-    axr.set_xlabel("lead time (days)")
-    axr.set_ylabel(f"RMSE [{units}]", color="#1f77b4")
-    axb.set_ylabel(f"mean bias [{units}]", color="#d62728")
-    axr.tick_params(axis="y", labelcolor="#1f77b4")
-    axb.tick_params(axis="y", labelcolor="#d62728")
-    axr.grid(True, alpha=0.3)
-    fig.tight_layout()
-    out = fig_dir(defn, year, ep) / f"rmse-vs-lead_{meta['short']}_L{lev:04d}.pdf"
-    fig.savefig(out, bbox_inches="tight"); plt.close(fig)
-    print(f"  wrote {out.name}")
+    ttl = (f"Europe heat-wave {ep.label} — footprint {label}@{lev} hPa "
+           f"(mean of {n_any} rollouts)")
+    for metric, ylab, zero in [("rmse", f"RMSE [{units}]", False),
+                               ("bias", f"mean bias [{units}]", True)]:
+        fig, ax = plt.subplots(figsize=(6.8, 4.4))
+        if zero:
+            ax.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
+        for src, a in curves.items():
+            ax.plot(a["lead_day"], a[metric], color=src.color, lw=1.9,
+                    label=src.pretty)
+        ax.set_title(ttl, fontsize=11, color=INK, loc="left")
+        ax.set_xlabel("lead time (days)"); ax.set_ylabel(ylab)
+        ax.grid(True, alpha=0.3)
+        if len(curves) > 1:
+            ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+        for s in ("top", "right"):
+            ax.spines[s].set_visible(False)
+        fig.tight_layout()
+        out = fig_dir(defn, year, ep) / f"{metric}-vs-lead_{meta['short']}_L{lev:04d}.pdf"
+        fig.savefig(out, bbox_inches="tight"); plt.close(fig)
+        print(f"  wrote {out.name}")
 
 
 # --------------------------------------------------------------------------- #
 # Eulerian: mean day-10 error map over the footprint (Europe extent)
 # --------------------------------------------------------------------------- #
-def driftmap_episode(source, defn, year, ep, gp, var, lev):
-    meta = C.VARIABLES[var]
-    label, units, fcmap = meta["label"], meta["units"], meta["cmap"]
+def _episode_day10(source, ep, year, var, lev):
+    """(fc_day10_mean, ref_mean, drift, n_steps, gp) footprint-masked for one
+    source over the episode's day-10 valid window, or None if no rollouts."""
+    gp = footprint_points(source, ep, year)
     files = episode_files(source, ep, BEFORE, 0)
     if not files:
-        print(f"  [driftmap] {ep.tag} {var}: no rollouts in window; skip")
-        return
+        return None
     truth = source.truth_at_levels(var, [lev]).sel(level=lev)
     facc = None; racc = None; n = 0
     for f in files:
@@ -204,36 +225,59 @@ def driftmap_episode(source, defn, year, ep, gp, var, lev):
         n += day10.sizes["time"]
         ds.close()
     if not n:
-        print(f"  [driftmap] {ep.tag} {var}: no day-10 steps; skip")
-        return
-    fc = facc / n
-    rf = racc / n
-    dr = fc - rf
+        return None
     fpm = gp.mask
-    fc = fc.where(fpm); rf = rf.where(fpm); dr = dr.where(fpm)
+    fc = (facc / n).where(fpm); rf = (racc / n).where(fpm)
+    return fc, rf, (fc - rf), n, gp
 
-    w, e, s, n_ = region_extent("europe")
-    gm = float(GP.masked_area_mean(dr, gp))
-    dlim = float(np.nanpercentile(np.abs(dr.values), 99)) or 1.0
-    vmin = float(np.nanmin([np.nanmin(fc.values), np.nanmin(rf.values)]))
-    vmax = float(np.nanmax([np.nanmax(fc.values), np.nanmax(rf.values)]))
 
-    fig, axes = plt.subplots(1, 3, figsize=(16.5, 4.6))
-    for ax, field, cmap, vlo, vhi, ttl, clab in [
-        (axes[0], rf, fcmap, vmin, vmax, f"{source.ref_label} mean", f"{label} [{units}]"),
-        (axes[1], fc, fcmap, vmin, vmax, f"{source.pretty} day-10 mean", f"{label} [{units}]"),
-        (axes[2], dr, "RdBu_r", -dlim, dlim,
-         f"mean day-10 error\n(footprint mean {gm:+.4g} {units})", f"error [{units}]")]:
-        m = ax.pcolormesh(field.longitude, field.latitude, field, cmap=cmap,
-                          vmin=vlo, vmax=vhi, shading="auto")
-        fig.colorbar(m, ax=ax, shrink=0.82, label=clab)
-        C.draw_coastlines(ax)
-        ax.set_xlim(w, e); ax.set_ylim(s, n_)
-        ax.set_title(ttl, fontsize=10); ax.grid(alpha=0.2)
-        ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
+def _map_panel(ax, field, cmap, vlo, vhi, ttl, clab, extent, fig):
+    w, e, s, n_ = extent
+    m = ax.pcolormesh(field.longitude, field.latitude, field, cmap=cmap,
+                      vmin=vlo, vmax=vhi, shading="auto")
+    fig.colorbar(m, ax=ax, shrink=0.82, label=clab)
+    C.draw_coastlines(ax)
+    ax.set_xlim(w, e); ax.set_ylim(s, n_)
+    ax.set_title(ttl, fontsize=10); ax.grid(alpha=0.2)
+    ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
+
+
+def driftmap_episode(sources, defn, year, ep, var, lev):
+    """Eulerian day-10 maps over the footprint, all models SIDE BY SIDE in one
+    figure: shared ERA5 panel + (day-10 mean, mean day-10 error) per model."""
+    meta = C.VARIABLES[var]
+    label, units, fcmap = meta["label"], meta["units"], meta["cmap"]
+    got = [(s, _episode_day10(s, ep, year, var, lev)) for s in sources]
+    got = [(s, r) for s, r in got if r is not None]
+    if not got:
+        print(f"  [driftmap] {ep.tag} {var}: no rollouts; skip")
+        return
+    extent = region_extent("europe")
+    fields = [r[0] for _, r in got] + [got[0][1][1]]          # day10s + ref
+    vmin = float(np.nanmin([np.nanmin(f.values) for f in fields]))
+    vmax = float(np.nanmax([np.nanmax(f.values) for f in fields]))
+    dlim = max((float(np.nanpercentile(np.abs(r[2].values), 99)) for _, r in got),
+               default=1.0) or 1.0
+
+    npan = 1 + 2 * len(got)
+    fig, axes = plt.subplots(1, npan, figsize=(5.4 * npan, 4.6), squeeze=False)
+    axes = axes[0]
+    ref_src = got[0][0]
+    _map_panel(axes[0], got[0][1][1], fcmap, vmin, vmax,
+               f"{ref_src.ref_label} mean", f"{label} [{units}]", extent, fig)
+    col = 1
+    for src, (fc, rf, dr, n, gp) in got:
+        gm = float(GP.masked_area_mean(dr, gp))
+        _map_panel(axes[col], fc, fcmap, vmin, vmax,
+                   f"{src.pretty} day-10 mean", f"{label} [{units}]", extent, fig)
+        _map_panel(axes[col + 1], dr, "RdBu_r", -dlim, dlim,
+                   f"{src.pretty} day-10 error\n(footprint mean {gm:+.4g} {units})",
+                   f"error [{units}]", extent, fig)
+        col += 2
+    models = " vs ".join(dict.fromkeys(s.pretty for s, _ in got))
     fig.suptitle(f"Europe heat-wave {ep.label} — day-10 {label}@{lev} hPa over the "
-                 f"heat-wave footprint ({ep.n_cells} cells, {defn.name} > {D.PTAG})",
-                 y=1.03, fontsize=12.5)
+                 f"heat-wave footprint ({ep.n_cells} cells, {models}, "
+                 f"{defn.name} > {D.PTAG})", y=1.03, fontsize=12.5)
     fig.tight_layout()
     out = fig_dir(defn, year, ep) / f"drift-map_{meta['short']}_L{lev:04d}.png"
     fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
@@ -269,10 +313,10 @@ def year_overview(defn, year, active_da, eps, region="europe"):
 
 
 # --------------------------------------------------------------------------- #
-def run_year(source, defn, year, window=HM.DEFAULT_WINDOW, region="europe"):
-    print(f"=== case study {defn.name} > {D.PTAG}: {source.run} ({year}) ===",
-          flush=True)
-    active = HM.active_mask_da(defn, year, window, region)
+def run_year(sources, defn, year, window=HM.DEFAULT_WINDOW, region="europe"):
+    models = "+".join(s.model for s in sources)
+    print(f"=== case study {defn.name} > {D.PTAG}: {models} ({year}) ===", flush=True)
+    active = HM.active_mask_da(defn, year, window, region)   # 2.8deg, grid-independent
     eps = HM.episodes(active, region)
     only = os.environ.get("CS_ONLY_EP", "").strip()
     if only:
@@ -280,26 +324,26 @@ def run_year(source, defn, year, window=HM.DEFAULT_WINDOW, region="europe"):
         eps = [e for e in eps if e.idx in want]
     print(f"[{year}] {len(eps)} episode(s): "
           + ", ".join(f"{e.tag}({e.label},{e.n_cells}c)" for e in eps), flush=True)
-    year_overview(defn, year, active, eps, region)
+    if not only:
+        year_overview(defn, year, active, eps, region)
+    avail = set.intersection(*(set(s.prediction_levels()) for s in sources))
     variables = C.selected_variables()
     for ep in eps:
-        gp = footprint_points(source, ep, year)
         print(f"-- {ep.tag} {ep.label} ({ep.n_days}d, {ep.n_cells} cells) --", flush=True)
         for var in variables:
             for lev in CS_LEVELS.get(var, [850]):
-                if lev not in source.prediction_levels():
+                if lev not in avail:
                     continue
-                spaghetti_episode(source, defn, year, ep, gp, var, lev)
-                rmse_episode(source, defn, year, ep, gp, var, lev)
-                driftmap_episode(source, defn, year, ep, gp, var, lev)
+                spaghetti_episode(sources, defn, year, ep, var, lev)
+                skill_episode(sources, defn, year, ep, var, lev)
+                driftmap_episode(sources, defn, year, ep, var, lev)
 
 
 def main():
     defn = D.BY_NAME[os.environ.get("HW_CS_DEF", "mixture")]
-    year = int(os.environ.get("HW_YEAR", "2023"))
-    run = os.environ.get("EVAL_RUN", f"era5_{year}")
-    source = S.Source.from_run(run)
-    run_year(source, defn, year)
+    sources = S.resolve_sources()
+    year = int(sources[0].year)
+    run_year(sources, defn, year)
     print(f"done -> {C.FIG_ROOT}/case_study/{defn.name}_{D.PTAG}/{year}/")
 
 
