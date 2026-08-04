@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 
 import haiku as hk  # pylint: disable=import-outside-toplevel
@@ -341,6 +342,256 @@ def open_reference_era5(
   return dataset, label
 
 
+def relative_input_times(input_duration: Any, step_hours: int) -> np.ndarray:
+  step = pd.Timedelta(hours=step_hours)
+  input_steps = int(round(pd.Timedelta(input_duration) / step))
+  if input_steps < 1:
+    raise ValueError(f"Input duration {input_duration!r} is shorter than one step.")
+  offsets = np.arange(-(input_steps - 1), 1, dtype=np.int32)
+  return offsets * np.timedelta64(step_hours, "h")
+
+
+def relative_target_times(rollout_steps: int, step_hours: int) -> np.ndarray:
+  return np.arange(1, rollout_steps + 1, dtype=np.int32) * np.timedelta64(
+      step_hours, "h"
+  )
+
+
+def lazy_template_array(
+    dims: tuple[str, ...],
+    coords: dict[str, Any],
+    chunks: tuple[int, ...],
+) -> xr.DataArray:
+  try:
+    import dask.array as da  # pylint: disable=import-outside-toplevel
+  except ImportError as exc:
+    raise RuntimeError(
+        "GRAPHCAST_ARCO_DIRECT requires dask so target templates can stay lazy."
+    ) from exc
+
+  shape = tuple(len(coords[dim]) for dim in dims)
+  data = da.full(shape, np.nan, dtype=np.float32, chunks=chunks)
+  return xr.DataArray(data, dims=dims, coords={dim: coords[dim] for dim in dims})
+
+
+def build_direct_targets_template(
+    target_variables: tuple[str, ...],
+    pressure_variables: set[str],
+    surface_variables: set[str],
+    lat: np.ndarray,
+    lon: np.ndarray,
+    levels: np.ndarray,
+    target_times: np.ndarray,
+) -> xr.Dataset:
+  coords: dict[str, Any] = {
+      "batch": np.asarray([0], dtype=np.int32),
+      "time": target_times,
+      "lat": lat,
+      "lon": lon,
+      "level": levels,
+  }
+  data_vars: dict[str, xr.DataArray] = {}
+  for variable in target_variables:
+    if variable in pressure_variables:
+      dims = ("batch", "time", "lat", "lon", "level")
+      chunks = (1, 1, len(lat), len(lon), 1)
+    elif variable in surface_variables or variable == "total_precipitation_6hr":
+      dims = ("batch", "time", "lat", "lon")
+      chunks = (1, 1, len(lat), len(lon))
+    else:
+      raise KeyError(f"Cannot build ARCO direct target template for {variable!r}.")
+    data_vars[variable] = lazy_template_array(dims, coords, chunks)
+  return xr.Dataset(data_vars)
+
+
+def read_direct_arco_era5(
+    task_config: Any,
+    rollout_steps: int,
+    step_hours: int,
+) -> tuple[xr.Dataset, xr.Dataset, xr.Dataset, xr.Dataset, str]:
+  """Build inputs/templates/truth directly from ARCO without writing a case file."""
+  init_time = os.environ.get("GRAPHCAST_INIT_TIME")
+  if not init_time:
+    raise ValueError("GRAPHCAST_ARCO_DIRECT requires GRAPHCAST_INIT_TIME.")
+
+  from arco_era5_graphcast_case import (  # pylint: disable=import-outside-toplevel
+      ATMOSPHERIC_ALIASES,
+      DEFAULT_ARCO_ERA5_PATH,
+      STATIC_ALIASES,
+      SURFACE_ALIASES,
+      add_batch_and_time_coords,
+      find_variable,
+      normalize_dims_and_coords,
+      open_arco_era5,
+      precipitation_6hr,
+      select_times,
+  )
+
+  init_datetime = np.datetime64(init_time, "ns")
+  input_time = relative_input_times(task_config.input_duration, step_hours)
+  target_time = relative_target_times(rollout_steps, step_hours)
+  input_datetimes = init_datetime + input_time.astype("timedelta64[ns]")
+  target_datetimes = init_datetime + target_time.astype("timedelta64[ns]")
+  pressure_levels = np.asarray(
+      tuple(int(level) for level in task_config.pressure_levels), dtype=np.int32)
+  pressure_variables = set(ATMOSPHERIC_ALIASES)
+  surface_variables = set(SURFACE_ALIASES)
+  static_variables = set(STATIC_ALIASES)
+
+  logging.info("Using direct ARCO streaming mode; no per-date NetCDF will be written.")
+  logging.info(
+      "Direct ARCO init %s: %d input frames, %d target frames",
+      init_time,
+      len(input_datetimes),
+      len(target_datetimes),
+  )
+  arco = normalize_dims_and_coords(
+      open_arco_era5(os.environ.get("GRAPHCAST_ARCO_ERA5_PATH", DEFAULT_ARCO_ERA5_PATH))
+  )
+  lat = np.asarray(arco["lat"].values, dtype=np.float32)
+  lon = np.asarray(arco["lon"].values, dtype=np.float32)
+
+  atmospheric_sources = {
+      name: find_variable(arco, aliases, name)
+      for name, aliases in ATMOSPHERIC_ALIASES.items()
+  }
+  surface_sources = {
+      name: find_variable(arco, aliases, name)
+      for name, aliases in SURFACE_ALIASES.items()
+  }
+  static_sources = {
+      name: find_variable(arco, aliases, name)
+      for name, aliases in STATIC_ALIASES.items()
+  }
+
+  input_variables = set(task_config.input_variables)
+  input_source_names = {
+      atmospheric_sources[name]
+      for name in input_variables & pressure_variables
+  } | {
+      surface_sources[name]
+      for name in input_variables & surface_variables
+  }
+  static_input_names = input_variables & static_variables
+
+  logging.info("Selecting direct ARCO input variables: %s", sorted(input_variables))
+  dynamic_inputs = select_times(arco[list(input_source_names)], input_datetimes)
+  if "level" in dynamic_inputs.coords:
+    dynamic_inputs = dynamic_inputs.sel(level=pressure_levels.tolist())
+    dynamic_inputs = dynamic_inputs.assign_coords(level=pressure_levels)
+
+  input_data_vars: dict[str, xr.DataArray] = {}
+  for name in input_variables & pressure_variables:
+    logging.info("Direct ARCO input pressure variable: %s", name)
+    input_data_vars[name] = add_batch_and_time_coords(
+        dynamic_inputs[atmospheric_sources[name]],
+        input_time,
+        ("time", "lat", "lon", "level"),
+    )
+  for name in input_variables & surface_variables:
+    logging.info("Direct ARCO input surface variable: %s", name)
+    input_data_vars[name] = add_batch_and_time_coords(
+        dynamic_inputs[surface_sources[name]],
+        input_time,
+        ("time", "lat", "lon"),
+    )
+  if "total_precipitation_6hr" in input_variables:
+    logging.info("Direct ARCO input precipitation variable: total_precipitation_6hr")
+    input_data_vars["total_precipitation_6hr"] = add_batch_and_time_coords(
+        precipitation_6hr(arco, input_datetimes, step_hours),
+        input_time,
+        ("time", "lat", "lon"),
+    )
+  for name in static_input_names:
+    logging.info("Direct ARCO static input variable: %s", name)
+    static = arco[static_sources[name]]
+    if "time" in static.dims:
+      static = select_times(arco[[static_sources[name]]], input_datetimes)[
+          static_sources[name]].isel(time=0).drop_vars("time", errors="ignore")
+    input_data_vars[name] = static.transpose("lat", "lon").astype(np.float32)
+
+  inputs = xr.Dataset(input_data_vars).assign_coords(
+      batch=np.asarray([0], dtype=np.int32),
+      time=input_time,
+      datetime=(("batch", "time"), input_datetimes[None, :]),
+      lat=lat,
+      lon=lon,
+      level=pressure_levels,
+  )
+  if input_variables & DERIVED_FORCING_VARIABLES:
+    data_utils.add_derived_vars(inputs)
+  if TISR in input_variables:
+    data_utils.add_tisr_var(inputs)
+  inputs = inputs.drop_vars("datetime", errors="ignore")
+  inputs = inputs[list(task_config.input_variables)]
+
+  targets_template = build_direct_targets_template(
+      tuple(task_config.target_variables),
+      pressure_variables,
+      surface_variables,
+      lat,
+      lon,
+      pressure_levels,
+      target_time,
+  )
+  reference_context = xr.Dataset(coords={
+      "batch": np.asarray([0], dtype=np.int32),
+      "time": input_time,
+      "datetime": (("batch", "time"), input_datetimes[None, :]),
+      "lat": lat,
+      "lon": lon,
+  })
+  forcings = make_forcings(
+      reference_context,
+      inputs,
+      targets_template.coords["time"],
+      task_config.forcing_variables,
+      step_hours,
+  )
+
+  truth_vars: dict[str, xr.DataArray] = {}
+  if METRIC_VARIABLE in pressure_variables:
+    source = atmospheric_sources[METRIC_VARIABLE]
+    metric_levels = [METRIC_LEVEL] if METRIC_LEVEL is not None else pressure_levels.tolist()
+    logging.info(
+        "Direct ARCO truth variable: %s at levels %s",
+        METRIC_VARIABLE,
+        metric_levels,
+    )
+    truth = select_times(arco[[source]], target_datetimes)[source].sel(level=metric_levels)
+    truth = truth.assign_coords(level=np.asarray(metric_levels, dtype=np.int32))
+    truth_vars[METRIC_VARIABLE] = add_batch_and_time_coords(
+        truth,
+        target_time,
+        ("time", "lat", "lon", "level"),
+    )
+  elif METRIC_VARIABLE in surface_variables:
+    source = surface_sources[METRIC_VARIABLE]
+    logging.info("Direct ARCO truth variable: %s", METRIC_VARIABLE)
+    truth_vars[METRIC_VARIABLE] = add_batch_and_time_coords(
+        select_times(arco[[source]], target_datetimes)[source],
+        target_time,
+        ("time", "lat", "lon"),
+    )
+  elif METRIC_VARIABLE == "total_precipitation_6hr":
+    logging.info("Direct ARCO truth variable: total_precipitation_6hr")
+    truth_vars[METRIC_VARIABLE] = add_batch_and_time_coords(
+        precipitation_6hr(arco, target_datetimes, step_hours),
+        target_time,
+        ("time", "lat", "lon"),
+    )
+  else:
+    logging.warning("No direct ARCO truth source for metric variable %s", METRIC_VARIABLE)
+  truth = xr.Dataset(truth_vars)
+
+  label = f"direct ARCO ERA5 stream ({init_time})"
+  logging.info("Direct ARCO inputs dims: %s", dict(inputs.sizes))
+  logging.info("Direct ARCO target template dims: %s", dict(targets_template.sizes))
+  logging.info("Direct ARCO forcings dims: %s", dict(forcings.sizes))
+  logging.info("Direct ARCO truth dims: %s", dict(truth.sizes))
+  return inputs, targets_template, forcings, truth, label
+
+
 def materialize_coords(dataset: xr.Dataset) -> xr.Dataset:
   """Return dataset with eager coordinates while preserving lazy data variables."""
   coords = {
@@ -410,6 +661,14 @@ def read_reference_era5(
     init_time: str | None = None,
 ) -> tuple[xr.Dataset, xr.Dataset, xr.Dataset, xr.Dataset, str]:
   """Read reference ERA5 and extract GraphCast inputs, template, forcings, truth."""
+  init_time = os.environ.get("GRAPHCAST_INIT_TIME")
+  if (
+      env_flag("GRAPHCAST_USE_ARCO", default=bool(init_time))
+      and env_flag("GRAPHCAST_ARCO_DIRECT")
+      and not env_flag("GRAPHCAST_USE_NEXTGEMS")
+  ):
+    return read_direct_arco_era5(task_config, rollout_steps, step_hours)
+
   reference_uri = configured_reference_era5_uri(
       cache_dir, task_config, rollout_steps, step_hours, init_time)
   reference, label = open_reference_era5(bucket, cache_dir, reference_uri)

@@ -45,6 +45,7 @@ fi
 
 export USE_NEXTGEMS=0
 export USE_ARCO="${USE_ARCO:-1}"
+export GRAPHCAST_ARCO_DIRECT="${GRAPHCAST_ARCO_DIRECT:-1}"
 export INIT_TIME
 export RUN_ID
 export OUT_DIR
@@ -57,6 +58,7 @@ export ARCO_CONSOLIDATED="${ARCO_CONSOLIDATED:-false}"
 export ARCO_CHUNKS="${ARCO_CHUNKS:-none}"
 export CACHE_DIR="${CACHE_DIR:-/scratch/${USER}/graphcast_cache}"
 export ARCO_CASE_CACHE_DIR="${ARCO_CASE_CACHE_DIR:-${SPAGHETTI_ROOT}/arco_cases}"
+export GRAPHCAST_NO_PLOT="${GRAPHCAST_NO_PLOT:-1}"
 export PYTHON="${PYTHON:-/home/ka/ka_iti/ka_ou7270/miniconda3/envs/graphcast_env/bin/python}"
 
 cd "${REPO_ROOT}"
@@ -66,6 +68,7 @@ echo "Task id: ${TASK_ID}"
 echo "Initialization time: ${INIT_TIME}"
 echo "Run id: ${RUN_ID}"
 echo "Output directory: ${OUT_DIR}"
+echo "Direct ARCO streaming: ${GRAPHCAST_ARCO_DIRECT}"
 
 # The operational script reads SLURM_SUBMIT_DIR as its repo root.
 export SLURM_SUBMIT_DIR="${REPO_ROOT}"
