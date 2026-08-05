@@ -148,6 +148,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
     meta = C.VARIABLES[var]
     label, units = meta["label"], meta["units"]
     curves = []            # list of (source, aggregated sorted dataframe)
+    raw = []               # list of (model, per-init drift df) -> pooled aggregate
     n_any = None
     for src in sources:
         gp = footprint_points(src, ep, year)
@@ -157,13 +158,14 @@ def skill_episode(sources, defn, year, ep, var, lev):
             continue
         per = src.drift_per_init(var, meta["short"], [lev], [gp],
                                  files=files, cache=False)
+        raw.append((src.model, per))
         agg = drift_view.aggregate(per)
         a = agg[(agg["region"] == gp.key) & (agg["level"] == lev)].sort_values("lead_hours")
         if not a.empty:
             curves.append((src, a))
             n_any = int(a["n_init"].iloc[0])
     if not curves:
-        return
+        return raw
     ttl = (f"Europe heat-wave {ep.label} — footprint {label}@{lev} hPa "
            f"(mean of {n_any} rollouts)")
     lines = [(src.color, src.pretty, a) for src, a in curves]
@@ -180,6 +182,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
         out = fig_dir(defn, year, ep) / f"{metric}-vs-lead_{meta['short']}_L{lev:04d}.pdf"
         fig.savefig(out, bbox_inches="tight"); plt.close(fig)
         print(f"  wrote {out.name}")
+    return raw
 
 
 # --------------------------------------------------------------------------- #
@@ -195,7 +198,7 @@ def _episode_day10(source, ep, year, var, lev):
     truth = source.truth_at_levels(var, [lev]).sel(level=lev)
     facc = None; racc = None; n = 0
     for f in files:
-        ds = xr.open_dataset(f)
+        ds = source.open_pred(f)
         hot10 = ds["lead_hours"] >= FINAL_LEAD_H
         day10 = (source.regrid_field(ds[var].sel(level=lev)).where(hot10, drop=True)
                  .transpose("time", "latitude", "longitude"))
@@ -292,7 +295,7 @@ def year_overview(defn, year, active_da, eps, region="europe"):
 
 
 # --------------------------------------------------------------------------- #
-def run_year(sources, defn, year, window=HM.DEFAULT_WINDOW, region="europe"):
+def run_year(sources, defn, year, pool=None, window=HM.DEFAULT_WINDOW, region="europe"):
     models = "+".join(s.model for s in sources)
     print(f"=== case study {defn.name} > {D.PTAG}: {models} ({year}) ===", flush=True)
     active = HM.active_mask_da(defn, year, window, region)   # 2.8deg, grid-independent
@@ -314,16 +317,75 @@ def run_year(sources, defn, year, window=HM.DEFAULT_WINDOW, region="europe"):
                 if lev not in avail:
                     continue
                 spaghetti_episode(sources, defn, year, ep, var, lev)
-                skill_episode(sources, defn, year, ep, var, lev)
+                raw = skill_episode(sources, defn, year, ep, var, lev) or []
+                if pool is not None:
+                    for model, per in raw:
+                        pool[(model, var, lev)].append(per)
                 driftmap_episode(sources, defn, year, ep, var, lev)
+    return len(eps)
+
+
+def run_aggregate(pool, defn, model_sources, n_events):
+    """Final, cross-episode comparison: pool the per-init drift over ALL heat waves
+    (every episode, every year) and plot the mean RMSE and mean bias vs lead per
+    model -- the models' average skill DURING heat waves. Only RMSE + bias (no
+    regional maps or spaghetti). One folder: case_study/<def>_<ptag>/_aggregate/."""
+    outdir = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / "_aggregate"
+    outdir.mkdir(parents=True, exist_ok=True)
+    for var in C.selected_variables():
+        meta = C.VARIABLES[var]
+        short, units, label = meta["short"], meta["units"], meta["label"]
+        for lev in CS_LEVELS.get(var, [850]):
+            curves = []
+            for src in model_sources:
+                pers = pool.get((src.model, var, lev), [])
+                if not pers:
+                    continue
+                allper = pd.concat(pers, ignore_index=True)
+                allper["region"] = "all"           # pool every heat wave together
+                agg = drift_view.aggregate(allper).sort_values("lead_hours")
+                curves.append((src.color, src.pretty, agg))
+            if not curves:
+                continue
+            for metric, ylab, zero in [("rmse", f"RMSE [{units}]", False),
+                                       ("bias", f"mean bias [{units}]", True)]:
+                fig, ax = plt.subplots(figsize=(6.8, 4.4))
+                P.draw_skill_metric(ax, curves, metric, zero_line=zero)
+                ax.set_title(f"{label}@{lev} hPa — mean {'RMSE' if metric=='rmse' else 'bias'} "
+                             f"over all {defn.name} heat waves ({n_events} events, > {D.PTAG})",
+                             fontsize=10.5, color=INK, loc="left")
+                ax.set_ylabel(ylab)
+                if len(curves) > 1:
+                    ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+                P.despine(ax)
+                fig.tight_layout()
+                out = outdir / f"{metric}-vs-lead_{short}_L{lev:04d}.pdf"
+                fig.savefig(out, bbox_inches="tight"); plt.close(fig)
+                print(f"[aggregate] wrote {out.relative_to(C.FIG_ROOT)}", flush=True)
 
 
 def main():
+    from collections import defaultdict
     defn = D.BY_NAME[os.environ.get("HW_CS_DEF", "mixture")]
-    sources = S.resolve_sources()
-    year = int(sources[0].year)
-    run_year(sources, defn, year)
-    print(f"done -> {C.FIG_ROOT}/case_study/{defn.name}_{D.PTAG}/{year}/")
+    years = [int(y) for y in os.environ.get("CS_YEARS", "2023 2026").replace(",", " ").split()]
+    dataset = os.environ.get("EVAL_DATASET", "era5")
+    models = os.environ.get("CS_MODELS", "neuralgcm,graphcast").replace(",", " ").split()
+    pool = defaultdict(list)
+    rep, n_events = {}, 0
+    for year in years:
+        srcs = []
+        for m in models:
+            run = S.run_for(m, dataset, year)
+            if run is None:
+                print(f"[cs] no run for {m}/{dataset}/{year}; skip", flush=True)
+                continue
+            s = S.Source.from_run(run, color=S.model_color(m))
+            srcs.append(s); rep[m] = s
+        if srcs:
+            n_events += run_year(srcs, defn, year, pool=pool)
+    if rep:
+        run_aggregate(pool, defn, [rep[m] for m in models if m in rep], n_events)
+    print(f"done -> {C.FIG_ROOT}/case_study/{defn.name}_{D.PTAG}/ ({n_events} events)")
 
 
 if __name__ == "__main__":
