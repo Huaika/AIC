@@ -11,13 +11,17 @@
 src/graphcast/data/
 
 # Generated figures are regenerable, so the bulk (regional / global / drift / compare
-# trees) stays out of git -- EXCEPT the curated case-study and out-of-distribution
-# results, which are tracked deliverables.
+# trees) stays out of git -- EXCEPT the curated deliverables: the case-study, the
+# out-of-distribution results, and the heat-wave definition figures + GIFs.
 outputs/*
 !outputs/figures/
 outputs/figures/*
 !outputs/figures/case_study/
 !outputs/figures/out_of_distribution/
+!outputs/figures/heatwave2023/
+!outputs/figures/heatwave2026/
+# ...but not the GIFs (large; left out for now) -- keep only the static figures
+outputs/figures/**/*.gif
 
 # Python caches / editable-install / build artifacts
 __pycache__/
