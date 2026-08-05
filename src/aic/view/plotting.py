@@ -13,10 +13,16 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 from aic.regions import to_lon180
+
+# land-sea mask backdrop (grid-independent; the same NextGEMS constant-fields mask
+# is reused for every run and cached on first use)
+_COAST_ZARR = "/pfs/work9/workspace/scratch/ka_je2428-nextgems_2049/constant_fields.zarr"
+_COAST = None
 
 # shared plot palette (single source of truth for the diagnostic views)
 INK = "#222222"
@@ -103,3 +109,17 @@ def map_panel(ax, field, *, cmap, vmin, vmax, title, cbar_label, extent, fig,
     ax.set_xlim(w, e); ax.set_ylim(s, n)
     ax.set_title(title, fontsize=10); ax.grid(alpha=0.2)
     ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
+
+
+def draw_coastlines(ax, lw=0.4, color="k", alpha=0.7):
+    """Coastlines by contouring the 0.25deg land-sea mask at 0.5 (no cartopy). A
+    grid-independent backdrop overlay, cached after the first call. Single source
+    for the coastline overlay used by the drift maps, the case study and the GIFs."""
+    global _COAST
+    if _COAST is None:
+        lsm = xr.open_zarr(_COAST_ZARR)["land_sea_mask"]
+        lsm = (lsm.assign_coords(lon=(((lsm.lon + 180) % 360) - 180))
+               .sortby("lon").sortby("lat"))
+        _COAST = (lsm.lon.values, lsm.lat.values, lsm.values)
+    lon, lat, mask = _COAST
+    ax.contour(lon, lat, mask, levels=[0.5], colors=color, linewidths=lw, alpha=alpha)

@@ -38,7 +38,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from PIL import Image
 
-from aic.regions import REGIONS, region_mask, region_extent
+from aic.regions import REGIONS, region_mask, region_extent, wrap180
+from aic.view.plotting import draw_coastlines
 # shared analysis core (no duplication of regrid / thresholds / spell detection)
 from aic.controller.heatwave.grid import regrid_da
 from aic.controller.heatwave.climatology import doy_percentile
@@ -85,7 +86,6 @@ MAJOR_Q = float(os.environ.get("HW_MAJOR_Q", "0.99"))
 # this AREA fraction of the region (widespread extreme, not a single cell); those
 # days define the episodes -> genuine major heat waves stand out.
 MAJOR_COVER = float(os.environ.get("HW_MAJOR_COVER", "0.05"))
-_COAST_ZARR = "/pfs/work9/workspace/scratch/ka_je2428-nextgems_2049/constant_fields.zarr"
 
 
 def _year(f):
@@ -183,23 +183,6 @@ def detect(vals, times, clim):
     return active, ext, z
 
 
-_COAST = None
-
-
-def draw_coast(ax):
-    global _COAST
-    try:
-        if _COAST is None:
-            cf = xr.open_zarr(_COAST_ZARR)
-            m = cf["land_sea_mask"]
-            m = m.assign_coords(lon=(((m.lon + 180) % 360) - 180)).sortby("lon").sortby("lat")
-            _COAST = (m.lon.values, m.lat.values, m.values)
-        lon, lat, mask = _COAST
-        ax.contour(lon, lat, mask, levels=[0.5], colors="k", linewidths=0.5, alpha=0.7)
-    except Exception:
-        pass
-
-
 def frame(lon2d, lat2d, z_day, active_day, date, w, e, s, n, region, nactive,
           cover_frac):
     fig, ax = plt.subplots(figsize=(6.4, 5.2))
@@ -210,7 +193,7 @@ def frame(lon2d, lat2d, z_day, active_day, date, w, e, s, n, region, nactive,
     # affected cells at full opacity
     zc = np.where(active_day, z_day, np.nan)
     m = ax.pcolormesh(lon2d, lat2d, zc, cmap=cmap, norm=norm, shading="auto", alpha=1.0)
-    draw_coast(ax)
+    draw_coastlines(ax, lw=0.5)
     ax.set_xlim(w, e); ax.set_ylim(s, n)
     ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
     sub = (f"{CS_DEF.upper()} heat-wave footprint · {nactive} cells · "
@@ -299,7 +282,7 @@ def main():
     # crop to region + sort lon to -180..180 ascending
     latm, lonm = region_mask(lat, lon, REGION)
     latc = lat[latm]
-    lonc = ((lon[lonm] + 180) % 360) - 180
+    lonc = wrap180(lon[lonm])
     order = np.argsort(lonc)
     lonc = lonc[order]
     crop = lambda a: a[:, latm][:, :, lonm][:, :, order]

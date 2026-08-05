@@ -47,7 +47,7 @@ import xarray as xr
 
 # Named regions: single source of truth (a region may also be given as a single
 # point via point=(lat, lon) to regional_series()).
-from aic.regions import REGIONS, select_region
+from aic.regions import REGIONS, select_region, wrap180, to_lon180
 
 # Default severity classes, keyed by where an event's cumulative-exceedance
 # magnitude falls in the reference-period distribution of heat-wave magnitudes for
@@ -76,8 +76,8 @@ def regional_series(files, region="europe", reduce="mean",
     da = ds[var]
     if point is not None:
         lat, lon = point
-        lon = ((lon + 180) % 360) - 180
-        da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180)).sortby("longitude")
+        lon = float(wrap180(lon))
+        da = to_lon180(da)
         series = da.sel(latitude=lat, longitude=lon, method="nearest")
     else:
         da = select_region(da, region)

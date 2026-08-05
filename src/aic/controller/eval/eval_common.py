@@ -41,7 +41,6 @@ from aic.regions import (
 
 MODEL_NAME = "v1/deterministic_2_8_deg.pkl"
 WS = "/pfs/work9/workspace/scratch"
-_COAST_ZARR = f"{WS}/ka_je2428-nextgems_2049/constant_fields.zarr"  # land-sea mask
 
 # --------------------------------------------------------------------------- #
 # Run registry -- the only per-run configuration
@@ -331,24 +330,9 @@ def figure_dir(period: int, region: str, variable: str, kind: str) -> Path:
     return d
 
 
-_COAST = None
-
-
-def draw_coastlines(ax, lw: float = 0.4, color: str = "k", alpha: float = 0.7) -> None:
-    """Coastlines by contouring the 0.25 deg land-sea mask at 0.5 (no cartopy).
-
-    The mask is just a backdrop overlay (grid-independent), so the same NextGEMS
-    constant-fields mask is reused for all runs.
-    """
-    global _COAST
-    if _COAST is None:
-        cf = xr.open_zarr(_COAST_ZARR)
-        lsm = cf["land_sea_mask"]
-        lsm = lsm.assign_coords(lon=(((lsm.lon + 180) % 360) - 180))
-        lsm = lsm.sortby("lon").sortby("lat")
-        _COAST = (lsm.lon.values, lsm.lat.values, lsm.values)
-    lon, lat, mask = _COAST
-    ax.contour(lon, lat, mask, levels=[0.5], colors=color, linewidths=lw, alpha=alpha)
+# coastline overlay now lives in view.plotting (a side-effect-free module the GIF
+# scripts can import too); re-exported here so C.draw_coastlines callers still work.
+from aic.view.plotting import draw_coastlines  # noqa: E402,F401
 
 
 # --------------------------------------------------------------------------- #

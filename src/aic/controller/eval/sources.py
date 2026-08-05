@@ -48,9 +48,6 @@ PALETTE = ["#1f77b4", "#d62728", "#2ca02c", "#9467bd", "#ff7f0e", "#17becf"]
 # everywhere. The reference (ERA5 / NextGEMS) line is always REF_COLOR.
 MODEL_COLORS = {"neuralgcm": "#1f77b4", "graphcast": "#d62728"}
 REF_COLOR = "black"
-# line styles to tell apart YEARS / rollout-windows of the SAME model on one axis
-# (the multi-year OOD spaghetti): solid, dashed, dotted, dash-dot, ...
-YEAR_LINESTYLES = ["-", "--", ":", "-.", (0, (3, 1, 1, 1))]
 
 FINAL_DAY_LEAD_MIN = 216  # >= 216 h == the day-10 slab (drift maps)
 
@@ -69,11 +66,6 @@ def _model_of(run: str) -> str:
 def model_color(model: str) -> str:
     """The shared colour for a model (fallback to the palette for a 3rd+ model)."""
     return MODEL_COLORS.get(model, PALETTE[0])
-
-
-def year_linestyle(index: int):
-    """A line style distinguishing the ``index``-th year/window of one model."""
-    return YEAR_LINESTYLES[index % len(YEAR_LINESTYLES)]
 
 
 def run_for(model: str, dataset: str, year: int) -> str | None:
