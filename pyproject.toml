@@ -7,6 +7,79 @@ name = "aic"
 version = "0.1.0"
 description = "AI-climate model inference & evaluation (NeuralGCM, GraphCast)"
 requires-python = ">=3.11"
+readme = "README.md"
+
+# Analysis / evaluation stack (the controller + view layers). The heavy ML stack
+# (neuralgcm, jax[cuda12], dinosaur, dm-haiku, ...) is CUDA-specific and installed
+# into the pinned venv via requirements.txt / setup_env.sh -- see the `ml` extra.
+dependencies = [
+    "numpy",
+    "pandas",
+    "xarray",
+    "scipy",
+    "matplotlib",
+    "netCDF4",
+    "zarr",
+    "gcsfs",
+    "Pillow",
+]
+
+[project.optional-dependencies]
+# The neural-network inference stack. Pinned/resolved by setup_env.sh because
+# jax[cuda12] must win the resolve over the CPU build (see requirements.txt).
+ml = [
+    "neuralgcm",
+    "jax[cuda12]",
+    "dinosaur-dycore",
+    "dm-haiku",
+    "chex",
+    "jraph",
+    "trimesh",
+    "absl-py",
+]
+# Developer tooling. `pip install -e .[dev]` (or into CI) to run tests + linters.
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pre-commit>=3.8",
+    "import-linter>=2.0",
+    "pandas-stubs",
+]
+
+# Console entry points: real commands over the module main()s (the `python -m`
+# invocations keep working too). e.g. `aic-casestudy`, `aic-drift-maps`.
+[project.scripts]
+aic-spaghetti      = "aic.view.spaghetti:main"
+aic-drift          = "aic.view.drift:main"
+aic-drift-maps     = "aic.view.drift_maps:main"
+aic-ood            = "aic.view.ood:main"
+aic-casestudy      = "aic.controller.casestudy.plots:main"
+aic-heatwave-compare = "aic.controller.heatwave.compare:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+# the vendored GraphCast fork and the retired scripts are not part of the package
+exclude = ["aic.model.graphcast.source*", "aic.legacy*"]
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py311"
+# never lint the vendored GraphCast fork or the retired legacy scripts
+extend-exclude = ["src/aic/model/graphcast/source", "src/aic/legacy"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# E501 (line length) is enforced by the formatter, not the linter, to avoid churn
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+# start type-checking the pure core; widen over time
+files = ["src/aic/regions.py", "src/aic/controller/eval/gridpoints.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

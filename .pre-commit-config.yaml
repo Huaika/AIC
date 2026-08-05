@@ -1,0 +1,22 @@
+# Pre-commit hooks for the aic package. Install with:
+#   pip install -e .[dev] && pre-commit install
+# The vendored GraphCast fork and legacy/ are excluded via pyproject's ruff config.
+exclude: '^(src/aic/model/graphcast/source/|src/aic/legacy/|outputs/|docs/)'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=512"]        # keep generated figures/data out of git
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff                     # lint (import order, unused, bugbear)
+        args: ["--fix"]
+      - id: ruff-format              # formatting

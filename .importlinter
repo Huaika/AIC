@@ -1,0 +1,26 @@
+# Architecture contracts, enforced by import-linter (`lint-imports`), run in CI.
+# The MVC intent: the view layer may depend on the controller/eval + shared
+# utilities, but data/eval code must never depend on plotting. (The controller-side
+# plotting DRIVERS -- casestudy.plots, heatwave.compare/spectrum -- are presentation
+# code and legitimately import view.plotting, so they are not covered here.)
+[importlinter]
+root_package = aic
+
+[importlinter:contract:eval-not-view]
+name = eval/data layer must not import the view layer
+type = forbidden
+source_modules =
+    aic.controller.eval
+forbidden_modules =
+    aic.view
+
+[importlinter:contract:shared-not-view]
+name = shared utilities must not import the view layer
+type = forbidden
+source_modules =
+    aic.regions
+    aic.config
+    aic.style
+forbidden_modules =
+    aic.view
+    aic.controller
