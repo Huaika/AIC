@@ -11,6 +11,14 @@ The notebook initializes the published **deterministic 2.8°** model
 compares NeuralGCM against ERA5 — qualitatively (maps) and with a simple
 RMSE-vs-lead-time skill check.
 
+Beyond the notebook, the `aic` package (`src/aic`, MVC: `model` / `controller` /
+`view`) runs NeuralGCM + GraphCast rollouts and the evaluation / heat-wave /
+out-of-distribution analyses. See:
+
+- [docs/running.md](docs/running.md) — the analyses + their entry points / Slurm submitter
+- [docs/configuration.md](docs/configuration.md) — env vars + cluster paths (`aic.config`)
+- [docs/development.md](docs/development.md) — tests, linting, architecture contracts, CI
+
 ## Setup
 
 NeuralGCM / `dinosaur` / JAX are not reliably tested on the devcontainer's
