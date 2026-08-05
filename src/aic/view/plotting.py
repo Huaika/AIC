@@ -11,12 +11,17 @@ plotters stay thin and consistent (model colours come from ``sources.MODEL_COLOR
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+from aic.regions import to_lon180
+
+# shared plot palette (single source of truth for the diagnostic views)
 INK = "#222222"
 GRID = "#dddddd"
+MUTED = "#666666"
 
 
 def doy_axis(dates):
@@ -62,7 +67,7 @@ def draw_rollout_bundle(ax, roll, color, *, linestyle="-", lw=0.6, alpha=0.5,
 def draw_skill_metric(ax, curves, metric, *, zero_line=False, lw=1.9):
     """Draw one skill metric (``"rmse"`` or ``"bias"``) vs lead day. ``curves`` is a
     list of ``(color, label, dataframe)`` where each frame has ``lead_day`` and the
-    ``metric`` column (as produced by ``view.drift.aggregate``)."""
+    ``metric`` column (as produced by ``eval_common.aggregate``)."""
     if zero_line:
         ax.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
     for color, label, df in curves:
@@ -71,20 +76,24 @@ def draw_skill_metric(ax, curves, metric, *, zero_line=False, lw=1.9):
     ax.grid(True, alpha=0.3)
 
 
-def wrap_lon180(field):
-    """Put a field's longitude on the -180..180 convention (sorted ascending), so it
-    aligns with ``region_extent`` boxes. Model-grid fields are stored on 0..360, so
-    without this the western hemisphere (real -180..0, stored 180..360) would be drawn
-    off the right edge of a -180..180 extent and silently vanish."""
-    lon = ((field.longitude + 180) % 360) - 180
-    return field.assign_coords(longitude=lon).sortby("longitude")
+def map_scales(field_arrays, drift_arrays, drift_pct=99):
+    """Shared colour limits for a drift-map row: a common ``(vmin, vmax)`` over all
+    field panels (forecasts + reference) and a symmetric ``±dlim`` for the drift /
+    error panels (``drift_pct``-th percentile of ``|drift|``). NaN-aware, so it works
+    for both full-region crops and NaN-masked footprints."""
+    vmin = float(np.nanmin([np.nanmin(f.values) for f in field_arrays]))
+    vmax = float(np.nanmax([np.nanmax(f.values) for f in field_arrays]))
+    dlim = max((float(np.nanpercentile(np.abs(d.values), drift_pct))
+                for d in drift_arrays), default=1.0) or 1.0
+    return vmin, vmax, dlim
 
 
 def map_panel(ax, field, *, cmap, vmin, vmax, title, cbar_label, extent, fig,
               coast=None):
     """One pcolormesh map panel with a colourbar, optional coastlines and a
-    ``(lon_w, lon_e, lat_s, lat_n)`` extent."""
-    field = wrap_lon180(field)
+    ``(lon_w, lon_e, lat_s, lat_n)`` extent. The field is put on the -180..180
+    longitude convention first so western-hemisphere cells align with the extent."""
+    field = to_lon180(field)
     m = ax.pcolormesh(field.longitude, field.latitude, field, cmap=cmap,
                       vmin=vmin, vmax=vmax, shading="auto")
     fig.colorbar(m, ax=ax, shrink=0.82, label=cbar_label)

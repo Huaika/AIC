@@ -42,12 +42,9 @@ def plot_period_region(fields, sources, var, short, units, label, fcmap,
                for r in fields}
         rf = C.select_region(fields[ref_src.run]["ref_clim"].sel(level=lev), reg)
 
-        # shared field colour scale over all forecasts + the reference
-        allf = list(fcs.values()) + [rf]
-        vmin = float(min(f.min() for f in allf))
-        vmax = float(max(f.max() for f in allf))
-        dlim = max((float(np.nanpercentile(np.abs(d.values), 99)) for d in drs.values()),
-                   default=1.0) or 1.0
+        # shared field colour scale over all forecasts + the reference; symmetric
+        # drift scale over all drift panels
+        vmin, vmax, dlim = P.map_scales(list(fcs.values()) + [rf], list(drs.values()))
 
         npan = 2 * len(sources) + 1
         fig, axes = plt.subplots(1, npan, figsize=(6.3 * npan, 4.3), squeeze=False)

@@ -29,13 +29,28 @@ DEFAULT_REGIONS = ["world"]
 CONTINENTS = [r for r in REGIONS if r != "world"]
 
 
+def wrap180(lon):
+    """Longitude values (any convention) -> the -180..180 convention. Numpy in,
+    numpy out; for masking / box tests where only the values matter, not order."""
+    return ((np.asarray(lon, float) + 180) % 360) - 180
+
+
+def to_lon180(da):
+    """An xarray field -> the -180..180 longitude convention, sorted ascending in
+    both latitude and longitude, so it aligns with ``region_extent`` boxes for
+    cropping and plotting. Model-grid fields are stored on 0..360; without this the
+    western hemisphere (real -180..0) sits past the right edge of a -180..180 extent
+    and silently vanishes. Single source for the ``((lon+180)%360)-180`` idiom."""
+    da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180))
+    return da.sortby("longitude").sortby("latitude")
+
+
 def select_region(da, region):
     """Crop an xarray DataArray (latitude/longitude dims) to the region's box
     (no-op footprint for 'world'). Normalizes longitude to -180..180 first; handles
     a box that wraps the antimeridian (lon_west > lon_east)."""
     s, n, w, e = REGIONS[region]
-    da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180))
-    da = da.sortby("longitude").sortby("latitude")
+    da = to_lon180(da)
     if w <= e:
         da = da.sel(longitude=slice(w, e))
     else:  # box crosses the antimeridian (e.g. 150 .. -150)
@@ -55,7 +70,7 @@ def region_mask(lat, lon, region):
     do not go through the xarray-based select_region()."""
     s, n, w, e = REGIONS[region]
     lat = np.asarray(lat)
-    lon2 = ((np.asarray(lon) + 180) % 360) - 180
+    lon2 = wrap180(lon)
     latm = (lat >= s) & (lat <= n)
     lonm = ((lon2 >= w) & (lon2 <= e)) if w <= e else ((lon2 >= w) | (lon2 <= e))
     return latm, lonm

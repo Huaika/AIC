@@ -20,6 +20,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from aic.controller.eval import eval_common as C
+from aic.controller.eval import gridpoints as GP
 from aic.controller.eval import sources as S
 from aic.view import naming as fig_naming
 from aic.view import plotting as P
@@ -27,11 +28,14 @@ from aic.view import plotting as P
 
 def build_ref(source, var, levels, regions) -> pd.DataFrame:
     """Reference daily area-mean per region, as a tidy frame (from one source's
-    own-grid truth -- the overlay draws a single reference line)."""
+    own-grid truth -- the overlay draws a single reference line). Uses the shared
+    ``GridPoints`` area-mean so it takes the exact same path as every other analysis
+    (a region box reduces to the identical cells/weights as the old crop+mean)."""
     truth = source.truth_at_levels(var, levels)
+    lat, lon = truth["latitude"].values, truth["longitude"].values
     frames = []
     for reg in regions:
-        ref_gm = C.lat_weighted_mean(C.select_region(truth, reg))
+        ref_gm = GP.masked_area_mean(truth, GP.GridPoints.from_region(lat, lon, reg))
         d = ref_gm.to_dataframe(name="ref_gmean").reset_index()
         d["region"] = reg
         d["date"] = pd.to_datetime(d["time"]).dt.floor("D")

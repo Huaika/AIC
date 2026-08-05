@@ -23,7 +23,7 @@ from dataclasses import dataclass
 import numpy as np
 import xarray as xr
 
-from aic.regions import REGIONS, region_extent
+from aic.regions import REGIONS, region_extent, wrap180
 
 
 def boxes_to_points(lat, lon, boxes) -> np.ndarray:
@@ -35,7 +35,7 @@ def boxes_to_points(lat, lon, boxes) -> np.ndarray:
     antimeridian, exactly like ``region_mask``.
     """
     lat = np.asarray(lat, float)
-    lon2 = ((np.asarray(lon, float) + 180) % 360) - 180
+    lon2 = wrap180(lon)
     out = np.zeros((lat.size, lon.size), bool)
     for s, n, w, e in boxes:
         latm = (lat >= s) & (lat <= n)

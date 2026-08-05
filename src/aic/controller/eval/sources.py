@@ -55,6 +55,13 @@ YEAR_LINESTYLES = ["-", "--", ":", "-.", (0, (3, 1, 1, 1))]
 FINAL_DAY_LEAD_MIN = 216  # >= 216 h == the day-10 slab (drift maps)
 
 
+def day10_slab(ds, da):
+    """Restrict a field to the day-10 lead slab (``lead_hours >= FINAL_DAY_LEAD_MIN``,
+    the >=216 h window the day-10 drift diagnostics average over), dropping earlier
+    leads. Shared by the drift-map builders (``day10_fields`` / the case study)."""
+    return da.where(ds["lead_hours"] >= FINAL_DAY_LEAD_MIN, drop=True)
+
+
 def _model_of(run: str) -> str:
     return "graphcast" if run.startswith("graphcast") else "neuralgcm"
 
@@ -388,7 +395,7 @@ class Source:
         for i, f in enumerate(files):
             ds = self.open_pred(f)
             t = self.regrid_field(ds[var].sel(level=levels))
-            end = t.where(ds["lead_hours"] >= FINAL_DAY_LEAD_MIN, drop=True).mean("time")
+            end = day10_slab(ds, t).mean("time")
             end = end.transpose("level", "latitude", "longitude")
             acc = end if acc is None else acc + end
             n += 1

@@ -25,7 +25,6 @@ from matplotlib.lines import Line2D
 
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import sources as S
-from aic.view import drift as drift_view
 from aic.view import naming as fig_naming
 from aic.view import plotting as P
 from aic.view.spaghetti import build_ref
@@ -52,7 +51,7 @@ def skill_year(sources, var, levels, region):
     for lev in C.render_levels(levels):
         lines, n_ref = [], None
         for s in sources:
-            agg = drift_view.aggregate(s.drift_per_init(var, short, levels, [region]))
+            agg = C.aggregate(s.drift_per_init(var, short, levels, [region]))
             a = agg[(agg["region"] == region) & (agg["level"] == lev)] \
                 .sort_values("lead_hours")
             if a.empty:

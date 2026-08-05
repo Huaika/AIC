@@ -307,14 +307,17 @@ def _part_path(var: str, t0: int, t1: int) -> Path:
 # --------------------------------------------------------------------------- #
 # small helpers (unchanged, run-independent)
 # --------------------------------------------------------------------------- #
-def lat_weighted_mean(da: xr.DataArray) -> xr.DataArray:
-    w = np.cos(np.deg2rad(da.latitude))
-    return da.weighted(w).mean(["latitude", "longitude"])
-
-
-def to_world(da: xr.DataArray) -> xr.DataArray:
-    da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180))
-    return da.sortby("longitude").sortby("latitude")
+def aggregate(df):
+    """Reduce per-init drift rows to mean skill vs lead: group by (region, level,
+    lead_hours) and average the squared error and bias over init-days, then derive
+    RMSE and lead-day. Pure data reduction shared by the skill views (spaghetti /
+    drift / OOD / case study) and their aggregate figures."""
+    agg = (df.groupby(["region", "level", "lead_hours"], as_index=False)
+             .agg(mse=("mse", "mean"), bias=("bias", "mean"),
+                  n_init=("init_date", "nunique")))
+    agg["rmse"] = np.sqrt(agg["mse"])
+    agg["lead_day"] = agg["lead_hours"] / 24.0
+    return agg
 
 
 def figure_dir(period: int, region: str, variable: str, kind: str) -> Path:

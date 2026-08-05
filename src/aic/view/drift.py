@@ -15,23 +15,12 @@ NextGEMS-2049 the reference is NextGEMS itself (drift).
 """
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import sources as S
 from aic.view import naming as fig_naming
 from aic.view import plotting as P
-
-
-def aggregate(df) -> pd.DataFrame:
-    agg = (df.groupby(["region", "level", "lead_hours"], as_index=False)
-             .agg(mse=("mse", "mean"), bias=("bias", "mean"),
-                  n_init=("init_date", "nunique")))
-    agg["rmse"] = np.sqrt(agg["mse"])
-    agg["lead_day"] = agg["lead_hours"] / 24.0
-    return agg
 
 
 def plot_variable(sources, var, levels, regions, periods):
@@ -52,7 +41,7 @@ def plot_variable(sources, var, levels, regions, periods):
             d = per[s.run]
             sub = d if period == 0 else d[d["_m"] == period]
             if not sub.empty:
-                aggs[s.run] = aggregate(sub)
+                aggs[s.run] = C.aggregate(sub)
         if not aggs:
             print(f"  [skip] no init-days in {C.period_dir_name(period)}")
             continue

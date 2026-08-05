@@ -39,7 +39,7 @@ RES_TAG = "2p8deg"
 REGION = os.environ.get("HW_SPEC_REGION", "world").strip().lower()
 
 COUNT_COLOR = "#2166ac"; AREA_COLOR = "#b35806"
-INK = "#222222"; MUTED = "#666666"; GRID = "#d9d9d9"
+from aic.view.plotting import INK, GRID, MUTED  # shared palette (single source)
 
 
 def _year(f):

@@ -27,9 +27,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
-import xarray as xr
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -38,7 +36,6 @@ import matplotlib.dates as mdates
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import gridpoints as GP
 from aic.controller.eval import sources as S
-from aic.view import drift as drift_view
 from aic.view import plotting as P
 from aic.controller.casestudy import heatwave_mask as HM
 from aic.controller.heatwave import definitions as D
@@ -46,10 +43,8 @@ from aic.regions import region_extent
 
 BEFORE = int(os.environ.get("CS_BEFORE", "10"))    # rollout window before episode
 AFTER = int(os.environ.get("CS_AFTER", "10"))      # brief window after (valid axis)
-FINAL_LEAD_H = S.FINAL_DAY_LEAD_MIN                 # >=216 h == day-10 slab
 # variable -> level(s) to evaluate (T at 850, Z at 500 for the case study)
 CS_LEVELS = {"temperature": [850], "geopotential": [500]}
-INK = "#222222"; GRID = "#dddddd"
 
 
 # --------------------------------------------------------------------------- #
@@ -123,9 +118,9 @@ def spaghetti_episode(sources, defn, year, ep, var, lev):
     ax.plot(ref["date"], ref["ref"], color="black", lw=2.2, zorder=3,
             label=f"{ref_src.ref_label} (daily mean)")
     ax.set_title(f"Europe heat-wave {ep.label} — footprint-mean {label} @ {lev} hPa "
-                 f"({defn.name}, > {D.PTAG})", fontsize=12, color=INK, loc="left")
-    ax.set_ylabel(f"{label} @{lev}hPa footprint mean [{units}]", color=INK)
-    ax.set_xlabel("Valid time", color=INK)
+                 f"({defn.name}, > {D.PTAG})", fontsize=12, color=P.INK, loc="left")
+    ax.set_ylabel(f"{label} @{lev}hPa footprint mean [{units}]", color=P.INK)
+    ax.set_xlabel("Valid time", color=P.INK)
     ax.set_xlim(v0, v1)
     ax.xaxis.set_major_locator(mdates.DayLocator(interval=5))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
@@ -159,7 +154,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
         per = src.drift_per_init(var, meta["short"], [lev], [gp],
                                  files=files, cache=False)
         raw.append((src.model, per))
-        agg = drift_view.aggregate(per)
+        agg = C.aggregate(per)
         a = agg[(agg["region"] == gp.key) & (agg["level"] == lev)].sort_values("lead_hours")
         if not a.empty:
             curves.append((src, a))
@@ -173,7 +168,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
                                ("bias", f"mean bias [{units}]", True)]:
         fig, ax = plt.subplots(figsize=(6.8, 4.4))
         P.draw_skill_metric(ax, lines, metric, zero_line=zero)
-        ax.set_title(ttl, fontsize=11, color=INK, loc="left")
+        ax.set_title(ttl, fontsize=11, color=P.INK, loc="left")
         ax.set_ylabel(ylab)
         if len(curves) > 1:
             ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
@@ -199,12 +194,11 @@ def _episode_day10(source, ep, year, var, lev):
     facc = None; racc = None; n = 0
     for f in files:
         ds = source.open_pred(f)
-        hot10 = ds["lead_hours"] >= FINAL_LEAD_H
-        day10 = (source.regrid_field(ds[var].sel(level=lev)).where(hot10, drop=True)
+        day10 = (S.day10_slab(ds, source.regrid_field(ds[var].sel(level=lev)))
                  .transpose("time", "latitude", "longitude"))
         if day10.sizes["time"] == 0:
             ds.close(); continue
-        vt = ds["valid_time"].where(hot10, drop=True).values
+        vt = S.day10_slab(ds, ds["valid_time"]).values
         tru = (truth.sel(time=vt, method="nearest")
                .transpose("time", "latitude", "longitude"))
         fsum = day10.sum("time")
@@ -232,11 +226,8 @@ def driftmap_episode(sources, defn, year, ep, var, lev):
         print(f"  [driftmap] {ep.tag} {var}: no rollouts; skip")
         return
     extent = region_extent("europe")
-    fields = [r[0] for _, r in got] + [got[0][1][1]]          # day10s + ref
-    vmin = float(np.nanmin([np.nanmin(f.values) for f in fields]))
-    vmax = float(np.nanmax([np.nanmax(f.values) for f in fields]))
-    dlim = max((float(np.nanpercentile(np.abs(r[2].values), 99)) for _, r in got),
-               default=1.0) or 1.0
+    field_arrays = [r[0] for _, r in got] + [got[0][1][1]]    # day-10 means + ref
+    vmin, vmax, dlim = P.map_scales(field_arrays, [r[2] for _, r in got])
 
     npan = 1 + 2 * len(got)
     fig, axes = plt.subplots(1, npan, figsize=(5.4 * npan, 4.6), squeeze=False)
@@ -279,8 +270,8 @@ def year_overview(defn, year, active_da, eps, region="europe"):
         ax.axvspan(e.start, e.end, color="#f2c14e", alpha=0.3, zorder=0)
         ax.text(e.start, ax.get_ylim()[1] * 0.92, e.tag, fontsize=7, color="#666")
     ax.set_title(f"Europe heat-wave coverage in {year} ({defn.name} > {D.PTAG}, "
-                 f"{len(eps)} episodes)", fontsize=12, color=INK, loc="left")
-    ax.set_ylabel("% of Europe in heat wave", color=INK)
+                 f"{len(eps)} episodes)", fontsize=12, color=P.INK, loc="left")
+    ax.set_ylabel("% of Europe in heat wave", color=P.INK)
     ax.xaxis.set_major_locator(mdates.MonthLocator())
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
     ax.set_xlim(times[0], times[-1]); ax.margins(x=0)
@@ -346,7 +337,7 @@ def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label):
                     continue
                 allper = pd.concat(pers, ignore_index=True)
                 allper["region"] = "all"           # pool every heat wave together
-                agg = drift_view.aggregate(allper).sort_values("lead_hours")
+                agg = C.aggregate(allper).sort_values("lead_hours")
                 curves.append((src.color, src.pretty, agg))
             if not curves:
                 continue
@@ -356,7 +347,7 @@ def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label):
                 P.draw_skill_metric(ax, curves, metric, zero_line=zero)
                 ax.set_title(f"{label}@{lev} hPa — mean {'RMSE' if metric=='rmse' else 'bias'} "
                              f"over {scope_label} ({n_events} events, > {D.PTAG})",
-                             fontsize=10.5, color=INK, loc="left")
+                             fontsize=10.5, color=P.INK, loc="left")
                 ax.set_ylabel(ylab)
                 if len(curves) > 1:
                     ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
