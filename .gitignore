@@ -10,9 +10,14 @@
 *.npz
 src/graphcast/data/
 
-# Generated figures (regenerable from the analyses; keep them out of git). A curated
-# subset can be force-added if a specific result must be tracked.
-outputs/
+# Generated figures are regenerable, so the bulk (regional / global / drift / compare
+# trees) stays out of git -- EXCEPT the curated case-study and out-of-distribution
+# results, which are tracked deliverables.
+outputs/*
+!outputs/figures/
+outputs/figures/*
+!outputs/figures/case_study/
+!outputs/figures/out_of_distribution/
 
 # Python caches / editable-install / build artifacts
 __pycache__/
