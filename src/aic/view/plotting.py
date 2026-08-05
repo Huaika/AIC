@@ -71,10 +71,20 @@ def draw_skill_metric(ax, curves, metric, *, zero_line=False, lw=1.9):
     ax.grid(True, alpha=0.3)
 
 
+def wrap_lon180(field):
+    """Put a field's longitude on the -180..180 convention (sorted ascending), so it
+    aligns with ``region_extent`` boxes. Model-grid fields are stored on 0..360, so
+    without this the western hemisphere (real -180..0, stored 180..360) would be drawn
+    off the right edge of a -180..180 extent and silently vanish."""
+    lon = ((field.longitude + 180) % 360) - 180
+    return field.assign_coords(longitude=lon).sortby("longitude")
+
+
 def map_panel(ax, field, *, cmap, vmin, vmax, title, cbar_label, extent, fig,
               coast=None):
     """One pcolormesh map panel with a colourbar, optional coastlines and a
     ``(lon_w, lon_e, lat_s, lat_n)`` extent."""
+    field = wrap_lon180(field)
     m = ax.pcolormesh(field.longitude, field.latitude, field, cmap=cmap,
                       vmin=vmin, vmax=vmax, shading="auto")
     fig.colorbar(m, ax=ax, shrink=0.82, label=cbar_label)

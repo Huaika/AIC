@@ -325,12 +325,15 @@ def run_year(sources, defn, year, pool=None, window=HM.DEFAULT_WINDOW, region="e
     return len(eps)
 
 
-def run_aggregate(pool, defn, model_sources, n_events):
-    """Final, cross-episode comparison: pool the per-init drift over ALL heat waves
-    (every episode, every year) and plot the mean RMSE and mean bias vs lead per
-    model -- the models' average skill DURING heat waves. Only RMSE + bias (no
-    regional maps or spaghetti). One folder: case_study/<def>_<ptag>/_aggregate/."""
-    outdir = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / "_aggregate"
+def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label):
+    """Cross-episode comparison: pool the per-init drift over a SET of heat waves and
+    plot the mean RMSE and mean bias vs lead per model -- the models' average skill
+    during those heat waves. Only RMSE + bias (no regional maps or spaghetti).
+
+    ``subdir`` is the output folder under case_study/<def>_<ptag>/ and ``scope_label``
+    names the set in the title. Called twice: once per year (``<year>/_aggregate/``,
+    that year's episodes) and once for everything (``_aggregate/``, all years)."""
+    outdir = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / subdir
     outdir.mkdir(parents=True, exist_ok=True)
     for var in C.selected_variables():
         meta = C.VARIABLES[var]
@@ -352,7 +355,7 @@ def run_aggregate(pool, defn, model_sources, n_events):
                 fig, ax = plt.subplots(figsize=(6.8, 4.4))
                 P.draw_skill_metric(ax, curves, metric, zero_line=zero)
                 ax.set_title(f"{label}@{lev} hPa — mean {'RMSE' if metric=='rmse' else 'bias'} "
-                             f"over all {defn.name} heat waves ({n_events} events, > {D.PTAG})",
+                             f"over {scope_label} ({n_events} events, > {D.PTAG})",
                              fontsize=10.5, color=INK, loc="left")
                 ax.set_ylabel(ylab)
                 if len(curves) > 1:
@@ -370,7 +373,7 @@ def main():
     years = [int(y) for y in os.environ.get("CS_YEARS", "2023 2026").replace(",", " ").split()]
     dataset = os.environ.get("EVAL_DATASET", "era5")
     models = os.environ.get("CS_MODELS", "neuralgcm,graphcast").replace(",", " ").split()
-    pool = defaultdict(list)
+    pool = defaultdict(list)             # every episode of every year (all-years agg)
     rep, n_events = {}, 0
     for year in years:
         srcs = []
@@ -381,10 +384,18 @@ def main():
                 continue
             s = S.Source.from_run(run, color=S.model_color(m))
             srcs.append(s); rep[m] = s
-        if srcs:
-            n_events += run_year(srcs, defn, year, pool=pool)
+        if not srcs:
+            continue
+        ypool = defaultdict(list)         # this year's episodes only (yearly agg)
+        n_year = run_year(srcs, defn, year, pool=ypool)
+        n_events += n_year
+        for k, v in ypool.items():        # roll the year into the all-years pool
+            pool[k].extend(v)
+        run_aggregate(ypool, defn, srcs, n_year, subdir=f"{year}/_aggregate",
+                      scope_label=f"the {n_year} {year} {defn.name} heat waves")
     if rep:
-        run_aggregate(pool, defn, [rep[m] for m in models if m in rep], n_events)
+        run_aggregate(pool, defn, [rep[m] for m in models if m in rep], n_events,
+                      subdir="_aggregate", scope_label=f"all {defn.name} heat waves")
     print(f"done -> {C.FIG_ROOT}/case_study/{defn.name}_{D.PTAG}/ ({n_events} events)")
 
 
