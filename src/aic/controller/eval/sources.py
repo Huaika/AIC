@@ -160,12 +160,69 @@ class Source:
         0.25deg); a no-op for NeuralGCM. Bilinear = linear in latitude and longitude,
         following WeatherBench (Rasp et al. 2020), which regrids fields to the coarse
         (~2.8deg) evaluation grid by bilinear interpolation (WeatherBench-2 likewise
-        regrids all forecasts + truth to one common grid before scoring)."""
+        regrids all forecasts + truth to one common grid before scoring). Idempotent:
+        a field already on the model grid (e.g. from the 2.8deg prediction cache) is
+        returned unchanged."""
         if not self.needs_regrid:
             return da
         tlat, tlon = self.model_grid()
+        if da.sizes.get("latitude") == len(tlat) and da.sizes.get("longitude") == len(tlon):
+            return da
         da = da.sortby("latitude").sortby("longitude")   # interp needs ascending
         return da.interp(latitude=tlat, longitude=tlon, method="linear")
+
+    @property
+    def pred_cache_dir(self) -> Path:
+        """Where 2.8deg-regridded copies of GraphCast predictions are cached, so the
+        0.25deg files are regridded ONCE instead of on every read."""
+        return self.pred_dir.parent / f"{self.pred_dir.name}_2p8deg"
+
+    def open_pred(self, f) -> xr.Dataset:
+        """Open a prediction file. For GraphCast, return the cached 2.8deg-regridded
+        copy when it exists (a tiny 128x64 read); otherwise the native 0.25deg file
+        (regrid_field then regrids downstream). For NeuralGCM, just the native file."""
+        if self.needs_regrid:
+            cache = self.pred_cache_dir / Path(f).name
+            if cache.exists():
+                return xr.open_dataset(cache)
+        return xr.open_dataset(f)
+
+    def build_pred_cache(self, variables: list[str], overwrite: bool = False,
+                         shard: tuple[int, int] = (0, 1)) -> int:
+        """Regrid every prediction file's 3-D fields onto the 2.8deg model grid and
+        cache them (GraphCast only). Run once; afterwards open_pred() reads the cache.
+        ``shard=(k, n)`` processes only files with ``index % n == k`` (stride sharding
+        for parallel array tasks). Skips already-cached files, so it resumes.
+        Returns the number of files written."""
+        if not self.needs_regrid:
+            return 0
+        k, n = shard
+        tlat, tlon = self.model_grid()
+        self.pred_cache_dir.mkdir(parents=True, exist_ok=True)
+        want = [v for v in variables]
+        written = 0
+        files = [f for i, f in enumerate(self.pred_files()) if i % n == k]
+        for i, f in enumerate(files):
+            cache = self.pred_cache_dir / f.name
+            if cache.exists() and not overwrite:
+                continue
+            ds = xr.open_dataset(f)
+            keep = [v for v in want if v in ds.data_vars]
+            sub = (ds[keep].sortby("latitude").sortby("longitude")
+                   .interp(latitude=tlat, longitude=tlon, method="linear"))
+            for c in ("lead_hours", "valid_time", "time", "level"):
+                if c in ds.variables and c not in sub.coords and c not in sub:
+                    sub[c] = ds[c]
+            sub.attrs.update(ds.attrs)
+            enc = {v: {"dtype": "float32", "zlib": True, "complevel": 4} for v in keep}
+            tmp = cache.with_suffix(".tmp.nc")
+            sub.to_netcdf(tmp, encoding=enc)
+            tmp.rename(cache)
+            ds.close()
+            written += 1
+            if i % 25 == 0 or i == len(files) - 1:
+                print(f"[predcache {self.run}] {i + 1}/{len(files)}", flush=True)
+        return written
 
     # -- reference (truth) on THIS source's grid ----------------------------- #
     def _truth_nc(self, var: str) -> Path:
@@ -230,7 +287,7 @@ class Source:
               f"{len(keys)} selector(s), {len(files)} files")
         rows = []
         for i, f in enumerate(files):
-            ds = xr.open_dataset(f)
+            ds = self.open_pred(f)
             init = pd.to_datetime(ds.attrs.get(
                 "init_date", f.stem.replace(f"pred_{self.year}_", "")))
             da = self.regrid_field(ds[var].sel(level=levels)).compute()
@@ -274,7 +331,7 @@ class Source:
               f"({var}) @ {len(levels)} lev, {len(keys)} selector(s)")
         rows = []
         for i, f in enumerate(files):
-            ds = xr.open_dataset(f)
+            ds = self.open_pred(f)
             init = pd.to_datetime(ds.attrs.get(
                 "init_date", f.stem.replace(f"pred_{self.year}_", "")))
             pred = self.regrid_field(ds[var].sel(level=levels))
@@ -329,7 +386,7 @@ class Source:
               f"{len(files)} rollouts ({var}), {len(levels)} lev")
         acc, n = None, 0
         for i, f in enumerate(files):
-            ds = xr.open_dataset(f)
+            ds = self.open_pred(f)
             t = self.regrid_field(ds[var].sel(level=levels))
             end = t.where(ds["lead_hours"] >= FINAL_DAY_LEAD_MIN, drop=True).mean("time")
             end = end.transpose("level", "latitude", "longitude")
