@@ -10,6 +10,10 @@
 *.npz
 src/graphcast/data/
 
+# Generated figures (regenerable from the analyses; keep them out of git). A curated
+# subset can be force-added if a specific result must be tracked.
+outputs/
+
 # Python caches / editable-install / build artifacts
 __pycache__/
 *.py[cod]
