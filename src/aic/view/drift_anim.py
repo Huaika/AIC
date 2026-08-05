@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 from aic.controller.eval import eval_common as C
+from aic.view import plotting as P
 from aic.view import naming as fig_naming
 from aic.view.gif_utils import shared_palette, quantize, save_gif
 
@@ -120,7 +121,7 @@ def _animate(var: str, level: int, kind: str, month: int):
             (axes[2], dr, "day-10 error (forecast - truth)", "RdBu_r", -dlim, dlim, f"error [{units}]"),
         ):
             m = ax.pcolormesh(lon, lat, fld, cmap=cm, vmin=lo, vmax=hi, shading="auto")
-            C.draw_coastlines(ax)
+            P.draw_coastlines(ax)
             ax.set_xlim(w, e); ax.set_ylim(s, n)
             ax.set_xlabel("longitude"); ax.set_ylabel("latitude"); ax.set_title(ttl)
             fig.colorbar(m, ax=ax, shrink=0.8, label=cl)

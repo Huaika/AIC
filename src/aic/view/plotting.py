@@ -17,17 +17,14 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+from aic.config import COAST_ZARR
 from aic.regions import to_lon180
+from aic.style import INK, GRID, MUTED  # re-exported for the view modules' back-compat
 
 # land-sea mask backdrop (grid-independent; the same NextGEMS constant-fields mask
 # is reused for every run and cached on first use)
-_COAST_ZARR = "/pfs/work9/workspace/scratch/ka_je2428-nextgems_2049/constant_fields.zarr"
+_COAST_ZARR = COAST_ZARR
 _COAST = None
-
-# shared plot palette (single source of truth for the diagnostic views)
-INK = "#222222"
-GRID = "#dddddd"
-MUTED = "#666666"
 
 
 def doy_axis(dates):

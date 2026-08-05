@@ -1,0 +1,17 @@
+#!/usr/bin/env python
+"""Shared plot-chrome palette -- the single source of truth for the ink/grid/muted
+colours used across every figure.
+
+It lives at the top level (not in ``view``) so BOTH the view layer and the
+controller-side plotting drivers (``controller/heatwave/compare``, ``spectrum``,
+``controller/casestudy/plots``) can import it without a controller->view
+dependency. ``view.plotting`` re-exports these names for back-compat.
+
+Model colours (blue=NeuralGCM, red=GraphCast) are a separate concern and live with
+the sources in ``controller/eval/sources`` (``MODEL_COLORS`` / ``model_color``).
+"""
+from __future__ import annotations
+
+INK = "#222222"     # primary text / axis ink
+GRID = "#dddddd"    # grid lines
+MUTED = "#666666"   # secondary text / spines / ticks

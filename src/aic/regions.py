@@ -42,7 +42,8 @@ def to_lon180(da):
     western hemisphere (real -180..0) sits past the right edge of a -180..180 extent
     and silently vanishes. Single source for the ``((lon+180)%360)-180`` idiom."""
     da = da.assign_coords(longitude=(((da.longitude + 180) % 360) - 180))
-    return da.sortby("longitude").sortby("latitude")
+    da = da.sortby("longitude")
+    return da.sortby("latitude") if "latitude" in da.coords else da
 
 
 def select_region(da, region):

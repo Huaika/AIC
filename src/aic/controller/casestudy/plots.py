@@ -235,17 +235,17 @@ def driftmap_episode(sources, defn, year, ep, var, lev):
     ref_src = got[0][0]
     P.map_panel(axes[0], got[0][1][1], cmap=fcmap, vmin=vmin, vmax=vmax,
                 title=f"{ref_src.ref_label} mean", cbar_label=f"{label} [{units}]",
-                extent=extent, fig=fig, coast=C.draw_coastlines)
+                extent=extent, fig=fig, coast=P.draw_coastlines)
     col = 1
     for src, (fc, rf, dr, n, gp) in got:
         gm = float(GP.masked_area_mean(dr, gp))
         P.map_panel(axes[col], fc, cmap=fcmap, vmin=vmin, vmax=vmax,
                     title=f"{src.pretty} day-10 mean", cbar_label=f"{label} [{units}]",
-                    extent=extent, fig=fig, coast=C.draw_coastlines)
+                    extent=extent, fig=fig, coast=P.draw_coastlines)
         P.map_panel(axes[col + 1], dr, cmap="RdBu_r", vmin=-dlim, vmax=dlim,
                     title=f"{src.pretty} day-10 error\n(footprint mean {gm:+.4g} {units})",
                     cbar_label=f"error [{units}]", extent=extent, fig=fig,
-                    coast=C.draw_coastlines)
+                    coast=P.draw_coastlines)
         col += 2
     models = " vs ".join(dict.fromkeys(s.pretty for s, _ in got))
     fig.suptitle(f"Europe heat-wave {ep.label} — day-10 {label}@{lev} hPa over the "

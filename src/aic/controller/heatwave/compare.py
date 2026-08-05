@@ -46,7 +46,7 @@ REF = range(1991, 2021)
 DEF_LABELS = {"ours": "850hPa 00 UTC", "mixture": "850hPa 6-hourly",
               "ecmwf": "2mT 6-hourly",
               "cordex": "2mT max, May–Sep p99 (1971–2000)"}
-from aic.view.plotting import INK, GRID  # shared palette (single source of truth)
+from aic.style import INK, GRID  # shared palette (single source of truth)
 
 
 def shades(base_hex, n, fmax=0.66):

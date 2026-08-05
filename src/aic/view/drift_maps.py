@@ -55,12 +55,12 @@ def plot_period_region(fields, sources, var, short, units, label, fcmap,
             P.map_panel(axes[col], fcs[src.run], cmap=fcmap, vmin=vmin, vmax=vmax,
                         title=f"{src.pretty} day-10 climatology\n(mean of {ninit} forecasts)",
                         cbar_label=f"{label} [{units}]", extent=extent, fig=fig,
-                        coast=C.draw_coastlines)
+                        coast=P.draw_coastlines)
             col += 1
         P.map_panel(axes[col], rf, cmap=fcmap, vmin=vmin, vmax=vmax,  # shared ref
                     title=f"{ref_src.ref_label} reference mean",
                     cbar_label=f"{label} [{units}]", extent=extent, fig=fig,
-                    coast=C.draw_coastlines)
+                    coast=P.draw_coastlines)
         col += 1
         for src in sources:  # drift panels
             dr = drs[src.run]
@@ -70,7 +70,7 @@ def plot_period_region(fields, sources, var, short, units, label, fcmap,
                         title=f"{src.pretty} drift = fc − {ref_src.ref_label}\n"
                               f"({area} mean {gm:+.4g} {units})",
                         cbar_label=f"drift [{units}]", extent=extent, fig=fig,
-                        coast=C.draw_coastlines)
+                        coast=P.draw_coastlines)
             col += 1
 
         models = " vs ".join(dict.fromkeys(x.pretty for x in sources))

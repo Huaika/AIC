@@ -35,6 +35,7 @@ from pathlib import Path
 import pandas as pd
 import xarray as xr
 
+from aic import config
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import gridpoints as GP
 
@@ -57,6 +58,20 @@ def day10_slab(ds, da):
     the >=216 h window the day-10 drift diagnostics average over), dropping earlier
     leads. Shared by the drift-map builders (``day10_fields`` / the case study)."""
     return da.where(ds["lead_hours"] >= FINAL_DAY_LEAD_MIN, drop=True)
+
+
+def cache_is_fresh(cache, inputs) -> bool:
+    """True if ``cache`` exists and is newer than every existing path in ``inputs``.
+    ``AIC_FORCE_REBUILD=1`` forces a rebuild (returns False). Guards against a stale
+    derived cache being silently re-served after its inputs change -- e.g. a drift
+    cache written before a regrid/truth change (which once resurfaced as a NaN map)."""
+    if config.env_bool("AIC_FORCE_REBUILD", False) or not cache.exists():
+        return False
+    try:
+        newest_in = max(p.stat().st_mtime for p in inputs if p.exists())
+    except ValueError:                       # no existing inputs to compare against
+        return True
+    return cache.stat().st_mtime >= newest_in
 
 
 def _model_of(run: str) -> str:
@@ -362,7 +377,15 @@ class Source:
         truth = self.truth_at_levels(var, levels)
         suffix = "" if period == 0 else f"_{period:02d}"
         nc = self.outdir / f"{self.run}_drift_maps_{short}{suffix}_{C.level_tag()}.nc"
-        if nc.exists():
+        files = self.pred_files()
+        if period != 0:
+            files = [f for f in files if C.pred_init_month(f) == period]
+        if not files:
+            print(f"[{self.run}] no init-days for {C.period_dir_name(period)}; skip")
+            return None
+        # serve the cache only if it is newer than its inputs (truth + prediction
+        # files); a stale cache (e.g. from before a regrid change) is rebuilt instead.
+        if cache_is_fresh(nc, [self._truth_nc(var), *files]):
             print(f"[{self.run}] maps cached {nc}")
             ds = xr.open_dataset(nc)
             # pre-multi-source caches used ngcm_day10_clim / ref_annual_clim
@@ -370,16 +393,11 @@ class Source:
                   {"ngcm_day10_clim": "fc_day10_clim",
                    "ref_annual_clim": "ref_clim"}.items() if old in ds}
             return ds.rename(rn) if rn else ds
-        files = self.pred_files()
         if period == 0:
             ref_clim = truth.mean("time")
         else:
-            files = [f for f in files if C.pred_init_month(f) == period]
             mask = (truth["time"].dt.month == period).values
             ref_clim = truth.isel(time=mask).mean("time")
-        if not files:
-            print(f"[{self.run}] no init-days for {C.period_dir_name(period)}; skip")
-            return None
         ref_clim = ref_clim.transpose("level", "latitude", "longitude")
         print(f"[{self.run}] {C.period_dir_name(period)}: end-of-forecast mean over "
               f"{len(files)} rollouts ({var}), {len(levels)} lev")

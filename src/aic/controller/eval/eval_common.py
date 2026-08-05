@@ -33,14 +33,16 @@ import gcsfs
 import numpy as np
 import xarray as xr
 
-from dinosaur import horizontal_interpolation, spherical_harmonic, xarray_utils
-import neuralgcm
+# NOTE: dinosaur + neuralgcm (the heavy CUDA ML stack) are imported LAZILY inside the
+# three functions that need them (_build_regridder / ensure_native_truth /
+# build_truth_chunk), so importing this module -- and thus every eval/plot module and
+# the tests -- does not require the ML stack.
 
+from aic.config import WORKSPACE as WS
 from aic.regions import (
     REGIONS, DEFAULT_REGIONS, CONTINENTS, select_region, region_extent)
 
 MODEL_NAME = "v1/deterministic_2_8_deg.pkl"
-WS = "/pfs/work9/workspace/scratch"
 
 # --------------------------------------------------------------------------- #
 # Run registry -- the only per-run configuration
@@ -330,9 +332,10 @@ def figure_dir(period: int, region: str, variable: str, kind: str) -> Path:
     return d
 
 
-# coastline overlay now lives in view.plotting (a side-effect-free module the GIF
-# scripts can import too); re-exported here so C.draw_coastlines callers still work.
-from aic.view.plotting import draw_coastlines  # noqa: E402,F401
+# The coastline overlay lives in view.plotting (a side-effect-free module the GIF
+# scripts can import too). It is intentionally NOT re-exported here: the eval/data
+# layer must not depend on the view layer (enforced by .importlinter). Callers use
+# aic.view.plotting.draw_coastlines directly.
 
 
 # --------------------------------------------------------------------------- #
@@ -412,6 +415,8 @@ def render_levels(levels: list[int]) -> list[int]:
 # Model-grid truth temperature (the only run-specific data path)
 # --------------------------------------------------------------------------- #
 def _build_regridder(sample: xr.DataArray):
+    from dinosaur import horizontal_interpolation, spherical_harmonic, xarray_utils
+    import neuralgcm
     gcs = gcsfs.GCSFileSystem(token="anon")
     with gcs.open(f"gs://neuralgcm/models/{MODEL_NAME}", "rb") as f:
         model = neuralgcm.PressureLevelModel.from_checkpoint(pickle.load(f))
@@ -455,6 +460,7 @@ def ensure_native_truth(vars: list[str] | None = None) -> None:
     clean (no NaN, physical ranges), so a plain conservative regrid is used --
     only the surface sst/ci forcing needs masking, and that is not plotted here.
     """
+    from dinosaur import xarray_utils
     vars = vars or selected_variables()
     missing = [v for v in vars if not native_truth_nc(v).exists()]
     present = [v for v in vars if v not in missing]
@@ -531,6 +537,7 @@ def build_truth_chunk(t0: int, t1: int, vars: list[str] | None = None) -> None:
     A variable is skipped if its final cache OR this chunk's part already exists.
     Reads the source in TRUTH_BATCH sub-slabs to bound memory; writes each part
     atomically (.tmp -> rename)."""
+    from dinosaur import xarray_utils
     vars = vars or selected_variables()
     want = [v for v in vars
             if not native_truth_nc(v).exists() and not _part_path(v, t0, t1).exists()]
