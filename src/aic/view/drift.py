@@ -74,7 +74,7 @@ def plot_variable(sources, var, levels, regions, periods):
                     P.draw_skill_metric(ax, curves, metric, zero_line=zero, lw=1.8)
                     ax.set_title(f"{title_model} — {lev} hPa {label} ({area}, "
                                  f"mean of {n_ref} daily inits)")
-                    ax.set_ylabel(ylab)
+                    ax.set_ylabel(P.skill_ylabel(metric, label, lev, units))
                     P.despine(ax)
                     if not single:
                         ax.legend(loc="upper left", fontsize=8, framealpha=0.9)

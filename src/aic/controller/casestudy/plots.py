@@ -169,7 +169,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
         fig, ax = plt.subplots(figsize=(6.8, 4.4))
         P.draw_skill_metric(ax, lines, metric, zero_line=zero)
         ax.set_title(ttl, fontsize=11, color=P.INK, loc="left")
-        ax.set_ylabel(ylab)
+        ax.set_ylabel(P.skill_ylabel(metric, label, lev, units))
         if len(curves) > 1:
             ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
         P.despine(ax)
@@ -385,7 +385,7 @@ def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label,
                 ax.set_title(f"{label}@{lev} hPa — mean {'RMSE' if metric=='rmse' else 'bias'} "
                              f"over {scope_label} ({n_events} events, > {D.PTAG})",
                              fontsize=10.5, color=P.INK, loc="left")
-                ax.set_ylabel(ylab)
+                ax.set_ylabel(P.skill_ylabel(metric, label, lev, units))
                 if len(curves) > 1:
                     ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
                 P.despine(ax)
@@ -393,6 +393,33 @@ def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label,
                 out = outdir / f"{metric}-vs-lead_{short}_L{lev:04d}.pdf"
                 for p in P.save_fig(fig, out, fmts=fmts):
                     print(f"[aggregate] wrote {p.relative_to(C.FIG_ROOT)}", flush=True)
+
+
+def run_aggregate_byyear(year_runs, defn, ylims=None, fmts=None):
+    """Combined figure per metric: the years (2023 | 2026) side by side, sharing one
+    y-axis, each panel pooling that year's heat waves -- complements the individual
+    <year>/_aggregate plots. Written to case_study/<def>_<ptag>/_by_year/."""
+    outdir = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / "_by_year"
+    outdir.mkdir(parents=True, exist_ok=True)
+    for var in C.selected_variables():
+        meta = C.VARIABLES[var]
+        short, units, label = meta["short"], meta["units"], meta["label"]
+        for lev in CS_LEVELS.get(var, [850]):
+            for metric, zero in [("rmse", False), ("bias", True)]:
+                panels = [(str(year), _aggregate_curves(ypool, srcs, var, lev))
+                          for year, ypool, srcs, _ in year_runs]
+                panels = [(y, c) for y, c in panels if c]
+                if not panels:
+                    continue
+                fig = P.skill_facets(panels, metric, zero_line=zero,
+                                     ylabel=P.skill_ylabel(metric, label, lev, units),
+                                     ylim=(ylims or {}).get((var, lev, metric)))
+                fig.suptitle(f"{label}@{lev} hPa — mean {'RMSE' if metric=='rmse' else 'bias'} "
+                             f"over {defn.name} heat waves per year (> {D.PTAG})",
+                             y=1.02, fontsize=11)
+                out = outdir / f"{metric}-vs-lead_{short}_L{lev:04d}.pdf"
+                for p in P.save_fig(fig, out, fmts=fmts):
+                    print(f"[by-year] wrote {p.relative_to(C.FIG_ROOT)}", flush=True)
 
 
 def main():
@@ -440,6 +467,8 @@ def main():
         run_aggregate(pool, defn, all_srcs, n_events,
                       subdir="_aggregate", scope_label=f"all {defn.name} heat waves",
                       ylims=ylims, fmts=fmts)
+    if year_runs:
+        run_aggregate_byyear(year_runs, defn, ylims=ylims, fmts=fmts)
     print(f"done -> {C.FIG_ROOT}/case_study/{defn.name}_{D.PTAG}/ ({n_events} events)")
 
 

@@ -44,42 +44,75 @@ def _figdir(*parts):
 # --------------------------------------------------------------------------- #
 # Per-year skill: RMSE and bias vs lead, both models overlaid
 # --------------------------------------------------------------------------- #
-def skill_year(sources, var, levels, region):
-    """One RMSE figure + one bias figure for a single year, overlaying every source
-    (model) in ``sources``, over ``region``."""
+_METRICS = [("rmse", False, "drift_rmse"), ("bias", True, "drift_bias")]
+
+
+def _year_aggs(srcs, var, short, levels, region):
+    """[(source, aggregated df: mean bias/rmse + CI over leads/levels)] for one year."""
+    return [(s, C.aggregate(s.drift_per_init(var, short, levels, [region]),
+                            ci_metrics=("bias", "rmse"))) for s in srcs]
+
+
+def _curves_at(year_aggs, region, lev):
+    """[(color, pretty, sorted df)] for one (region, level) from [(source, agg)]."""
+    out = []
+    for s, agg in year_aggs:
+        a = agg[(agg["region"] == region) & (agg["level"] == lev)].sort_values("lead_hours")
+        if not a.empty:
+            out.append((s.color, s.pretty, a))
+    return out
+
+
+def skill_year(year, year_aggs, var, levels, region):
+    """One RMSE figure + one bias figure for a single year, overlaying every model."""
     meta = C.VARIABLES[var]
-    short, units, label = meta["short"], meta["units"], meta["label"]
-    year = sources[0].year
+    units, label = meta["units"], meta["label"]
     area = "global" if region == "world" else region
+    srcs = [s for s, _ in year_aggs]
     for lev in C.render_levels(levels):
-        lines, n_ref = [], None
-        for s in sources:
-            agg = C.aggregate(s.drift_per_init(var, short, levels, [region]),
-                              ci_metrics=("bias", "rmse"))
-            a = agg[(agg["region"] == region) & (agg["level"] == lev)] \
-                .sort_values("lead_hours")
-            if a.empty:
-                continue
-            n_ref = int(a["n_init"].iloc[0])
-            lines.append((s.color, s.pretty, a))
-        if n_ref is None:
+        curves = _curves_at(year_aggs, region, lev)
+        if not curves:
             print(f"  [skill] {year} {var}@{lev}: no data; skip")
             continue
-        models = " vs ".join(dict.fromkeys(s.pretty for s in sources))
-        for metric, ylab, zero, kind in [
-                ("rmse", f"RMSE [{units}]", False, "drift_rmse"),
-                ("bias", f"mean bias [{units}]", True, "drift_bias")]:
+        n_ref = int(curves[0][2]["n_init"].iloc[0])
+        models = " vs ".join(dict.fromkeys(c[1] for c in curves))
+        for metric, zero, kind in _METRICS:
             fig, ax = plt.subplots(figsize=(6.6, 4.4))
-            P.draw_skill_metric(ax, lines, metric, zero_line=zero)
+            P.draw_skill_metric(ax, curves, metric, zero_line=zero)
             ax.set_title(f"{models} — {year}, {lev} hPa {label} ({area}, "
                          f"mean of {n_ref} inits)", fontsize=11)
-            ax.set_ylabel(ylab)
+            ax.set_ylabel(P.skill_ylabel(metric, label, lev, units))
             ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
             P.despine(ax)
             fig.tight_layout()
             out = _figdir(var, kind) / fig_naming.figure_name(
-                S.model_token(sources), sources[0].dataset, region, var, lev, year,
+                S.model_token(srcs), srcs[0].dataset, region, var, lev, year,
                 "entire-year", kind, ext="pdf")
+            for p in P.save_fig(fig, out, fmts=OOD_FMTS):
+                print(f"  wrote {p.relative_to(OOD_ROOT)}")
+
+
+def skill_facets_years(aggs_by_year, var, levels, region):
+    """Combined figure per metric: the years (1955 | 2023 | 2049) side by side, sharing
+    one y-axis, so the shift in skill across climates reads at a glance."""
+    meta = C.VARIABLES[var]
+    units, label = meta["units"], meta["label"]
+    area = "global" if region == "world" else region
+    years = sorted(aggs_by_year)
+    any_srcs = [s for yr in years for s, _ in aggs_by_year[yr]]
+    for lev in C.render_levels(levels):
+        for metric, zero, kind in _METRICS:
+            panels = [(yr, _curves_at(aggs_by_year[yr], region, lev)) for yr in years]
+            panels = [(yr, c) for yr, c in panels if c]
+            if not panels:
+                continue
+            models = " vs ".join(dict.fromkeys(c[1] for _, cs in panels for c in cs))
+            fig = P.skill_facets(panels, metric, zero_line=zero,
+                                 ylabel=P.skill_ylabel(metric, label, lev, units))
+            fig.suptitle(f"{models} — {label}@{lev} hPa ({area})", y=1.02, fontsize=12)
+            out = _figdir(var, kind) / fig_naming.figure_name(
+                S.model_token(any_srcs), any_srcs[0].dataset, region, var, lev,
+                "-".join(str(y) for y in years), "by-year", kind, ext="pdf")
             for p in P.save_fig(fig, out, fmts=OOD_FMTS):
                 print(f"  wrote {p.relative_to(OOD_ROOT)}")
 
@@ -145,13 +178,18 @@ def main():
     levels = S.requested_levels(sources)
     regions = C.selected_regions()
     for var in C.selected_variables():
+        short = C.VARIABLES[var]["short"]
         by_year = {}
         for s in sources:
             by_year.setdefault(s.year, []).append(s)
         for region in regions:
             print(f"=== OOD skill: {var} / {region} ===")
-            for yr in sorted(by_year):
-                skill_year(by_year[yr], var, levels, region)
+            aggs = {yr: _year_aggs(srcs, var, short, levels, region)
+                    for yr, srcs in by_year.items()}
+            for yr in sorted(aggs):
+                skill_year(yr, aggs[yr], var, levels, region)
+            print(f"=== OOD skill (years side by side): {var} / {region} ===")
+            skill_facets_years(aggs, var, levels, region)
             print(f"=== OOD spaghetti: {var} / {region} ===")
             spaghetti_multiyear(sources, var, levels, region)
     print(f"done -> {OOD_ROOT}/<variable>/{{drift_rmse,drift_bias,spaghetti}}/")

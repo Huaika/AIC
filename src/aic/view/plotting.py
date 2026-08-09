@@ -112,10 +112,42 @@ def draw_skill_metric(ax, curves, metric, *, zero_line=False, lw=1.9):
         ax.plot(df["lead_day"], df[metric], color=color, lw=lw, label=label)
     if banded:
         pct = int(round(config.env_float("AIC_BOOT_CI", 0.95) * 100))
-        ax.plot([], [], color="0.5", lw=6, alpha=0.25,
-                label=f"{pct}% CI (block bootstrap)")
-    ax.set_xlabel("lead time (days)")
+        ax.plot([], [], color="0.5", lw=6, alpha=0.25, label=f"{pct}% CI")
+    ax.set_xlabel("Lead Time [days]")
     ax.grid(True, alpha=0.3)
+
+
+def skill_ylabel(metric, var_label, level, units):
+    """Shared y-axis label for a skill plot, e.g. 'Weighted Temperature Mean Bias at
+    850 hPa [K]' (bias) / 'Weighted Geopotential RMSE at 500 hPa [m^2/s^2]' (rmse).
+    'Weighted' because the spatial mean is cos(lat) area-weighted."""
+    stat = "Mean Bias" if metric == "bias" else "RMSE"
+    return f"Weighted {str(var_label).capitalize()} {stat} at {level} hPa [{units}]"
+
+
+def skill_facets(panels, metric, *, ylabel, zero_line=False, ylim=None,
+                 per_panel=(5.0, 4.4)):
+    """One figure with a column per (title, curves) panel, sharing the y-axis so the
+    panels are directly comparable: each panel titled (e.g. the year) with its own
+    'Lead Time [days]' x-label, ONE shared y-label on the left, ONE legend. ``curves``
+    is ``[(color, label, df)]`` as for draw_skill_metric (bands drawn if present).
+    ``ylim`` fixes the shared y-range (else autoscaled)."""
+    n = len(panels)
+    fig, axes = plt.subplots(1, n, figsize=(per_panel[0] * n, per_panel[1]),
+                             sharey=True, squeeze=False)
+    axes = axes[0]
+    for ax, (title, curves) in zip(axes, panels):
+        draw_skill_metric(ax, curves, metric, zero_line=zero_line)
+        ax.set_title(str(title), fontsize=12)
+        despine(ax)
+    if ylim is not None:
+        axes[0].set_ylim(*ylim)     # sharey -> applies to all panels
+    axes[0].set_ylabel(ylabel)
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        axes[-1].legend(handles, labels, loc="upper left", fontsize=9, framealpha=0.9)
+    fig.tight_layout()
+    return fig
 
 
 def map_scales(field_arrays, drift_arrays, drift_pct=99):
