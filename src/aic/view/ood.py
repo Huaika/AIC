@@ -23,6 +23,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
+from aic import config
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import sources as S
 from aic.view import naming as fig_naming
@@ -30,6 +31,8 @@ from aic.view import plotting as P
 from aic.view.spaghetti import build_ref
 
 OOD_ROOT = C.FIG_ROOT / "out_of_distribution"
+# output file type(s) for the OOD figures (default pdf); e.g. OOD_FMTS="pdf png"
+OOD_FMTS = config.env_list("OOD_FMTS") or None
 
 
 def _figdir(*parts):
@@ -76,8 +79,8 @@ def skill_year(sources, var, levels, region):
             out = _figdir(var, kind) / fig_naming.figure_name(
                 S.model_token(sources), sources[0].dataset, region, var, lev, year,
                 "entire-year", kind, ext="pdf")
-            P.save_fig(fig, out)
-            print(f"  wrote {out.relative_to(OOD_ROOT)}")
+            for p in P.save_fig(fig, out, fmts=OOD_FMTS):
+                print(f"  wrote {p.relative_to(OOD_ROOT)}")
 
 
 # --------------------------------------------------------------------------- #
@@ -130,8 +133,8 @@ def spaghetti_multiyear(sources, var, levels, region):
         out = _figdir(var, "spaghetti") / fig_naming.figure_name(
             S.model_token(sources), sources[0].dataset, region, var, lev,
             "-".join(str(y) for y in years), "multiyear", "spaghetti", ext="pdf")
-        P.save_fig(fig, out)
-        print(f"  wrote {out.relative_to(OOD_ROOT)}")
+        for p in P.save_fig(fig, out, fmts=OOD_FMTS):
+            print(f"  wrote {p.relative_to(OOD_ROOT)}")
 
 
 def main():
