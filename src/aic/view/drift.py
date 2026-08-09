@@ -47,12 +47,9 @@ def plot_variable(sources, var, levels, regions, periods):
             continue
         for reg in regions:
             figdir = S.figure_dir(sources, period, reg, var, "drift_stats")
-            area = "global" if reg == "world" else reg
             for lev in C.render_levels(levels):
                 # RMSE and bias are drawn as SEPARATE figures (readability); each
                 # overlays one line per source, coloured by the shared model palette.
-                title_model = sources[0].ref_label if single else \
-                    " vs ".join(dict.fromkeys(s.pretty for s in sources))
                 # gather each source's (colour, label, curve) for this region/level
                 curves, n_ref = [], None
                 for s in sources:
@@ -72,12 +69,10 @@ def plot_variable(sources, var, levels, regions, periods):
                         ("bias", f"mean bias [{units}]", True, "drift_bias")]:
                     fig, ax = plt.subplots(figsize=(6.5, 4.4))
                     P.draw_skill_metric(ax, curves, metric, zero_line=zero, lw=1.8)
-                    ax.set_title(f"{title_model} — {lev} hPa {label} ({area}, "
-                                 f"mean of {n_ref} daily inits)")
                     ax.set_ylabel(P.skill_ylabel(metric, label, lev, units))
                     P.despine(ax)
                     if not single:
-                        ax.legend(loc="upper left", fontsize=8, framealpha=0.9)
+                        ax.legend(loc="best", fontsize=8, framealpha=0.9)
                     fig.tight_layout()
                     out = figdir / fig_naming.figure_name(
                         S.model_token(sources), sources[0].dataset, reg, var, lev,

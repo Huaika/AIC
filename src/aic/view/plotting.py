@@ -140,12 +140,12 @@ def skill_facets(panels, metric, *, ylabel, zero_line=False, ylim=None,
         draw_skill_metric(ax, curves, metric, zero_line=zero_line)
         ax.set_title(str(title), fontsize=12)
         despine(ax)
+        # each year-panel keeps its own legend, auto-placed so it clears that
+        # panel's data (the panels can have quite different data locations)
+        ax.legend(loc="best", fontsize=9, framealpha=0.9)
     if ylim is not None:
         axes[0].set_ylim(*ylim)     # sharey -> applies to all panels
     axes[0].set_ylabel(ylabel)
-    handles, labels = axes[0].get_legend_handles_labels()
-    if handles:
-        axes[-1].legend(handles, labels, loc="upper left", fontsize=9, framealpha=0.9)
     fig.tight_layout()
     return fig
 

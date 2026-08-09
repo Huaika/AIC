@@ -67,22 +67,17 @@ def skill_year(year, year_aggs, var, levels, region):
     """One RMSE figure + one bias figure for a single year, overlaying every model."""
     meta = C.VARIABLES[var]
     units, label = meta["units"], meta["label"]
-    area = "global" if region == "world" else region
     srcs = [s for s, _ in year_aggs]
     for lev in C.render_levels(levels):
         curves = _curves_at(year_aggs, region, lev)
         if not curves:
             print(f"  [skill] {year} {var}@{lev}: no data; skip")
             continue
-        n_ref = int(curves[0][2]["n_init"].iloc[0])
-        models = " vs ".join(dict.fromkeys(c[1] for c in curves))
         for metric, zero, kind in _METRICS:
             fig, ax = plt.subplots(figsize=(6.6, 4.4))
             P.draw_skill_metric(ax, curves, metric, zero_line=zero)
-            ax.set_title(f"{models} — {year}, {lev} hPa {label} ({area}, "
-                         f"mean of {n_ref} inits)", fontsize=11)
             ax.set_ylabel(P.skill_ylabel(metric, label, lev, units))
-            ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+            ax.legend(loc="best", fontsize=9, framealpha=0.9)
             P.despine(ax)
             fig.tight_layout()
             out = _figdir(var, kind) / fig_naming.figure_name(
@@ -97,7 +92,6 @@ def skill_facets_years(aggs_by_year, var, levels, region):
     one y-axis, so the shift in skill across climates reads at a glance."""
     meta = C.VARIABLES[var]
     units, label = meta["units"], meta["label"]
-    area = "global" if region == "world" else region
     years = sorted(aggs_by_year)
     any_srcs = [s for yr in years for s, _ in aggs_by_year[yr]]
     for lev in C.render_levels(levels):
@@ -106,10 +100,8 @@ def skill_facets_years(aggs_by_year, var, levels, region):
             panels = [(yr, c) for yr, c in panels if c]
             if not panels:
                 continue
-            models = " vs ".join(dict.fromkeys(c[1] for _, cs in panels for c in cs))
             fig = P.skill_facets(panels, metric, zero_line=zero,
                                  ylabel=P.skill_ylabel(metric, label, lev, units))
-            fig.suptitle(f"{models} — {label}@{lev} hPa ({area})", y=1.02, fontsize=12)
             out = _figdir(var, kind) / fig_naming.figure_name(
                 S.model_token(any_srcs), any_srcs[0].dataset, region, var, lev,
                 "-".join(str(y) for y in years), "by-year", kind, ext="pdf")

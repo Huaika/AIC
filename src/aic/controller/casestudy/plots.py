@@ -144,7 +144,6 @@ def skill_episode(sources, defn, year, ep, var, lev):
     label, units = meta["label"], meta["units"]
     curves = []            # list of (source, aggregated sorted dataframe)
     raw = []               # list of (model, per-init drift df) -> pooled aggregate
-    n_any = None
     for src in sources:
         gp = footprint_points(src, ep, year)
         files = episode_files(src, ep, BEFORE, 0)
@@ -158,20 +157,16 @@ def skill_episode(sources, defn, year, ep, var, lev):
         a = agg[(agg["region"] == gp.key) & (agg["level"] == lev)].sort_values("lead_hours")
         if not a.empty:
             curves.append((src, a))
-            n_any = int(a["n_init"].iloc[0])
     if not curves:
         return raw
-    ttl = (f"Europe heat-wave {ep.label} — footprint {label}@{lev} hPa "
-           f"(mean of {n_any} rollouts)")
     lines = [(src.color, src.pretty, a) for src, a in curves]
     for metric, ylab, zero in [("rmse", f"RMSE [{units}]", False),
                                ("bias", f"mean bias [{units}]", True)]:
         fig, ax = plt.subplots(figsize=(6.8, 4.4))
         P.draw_skill_metric(ax, lines, metric, zero_line=zero)
-        ax.set_title(ttl, fontsize=11, color=P.INK, loc="left")
         ax.set_ylabel(P.skill_ylabel(metric, label, lev, units))
         if len(curves) > 1:
-            ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+            ax.legend(loc="best", fontsize=9, framealpha=0.9)
         P.despine(ax)
         fig.tight_layout()
         out = fig_dir(defn, year, ep) / f"{metric}-vs-lead_{meta['short']}_L{lev:04d}.pdf"
@@ -382,12 +377,9 @@ def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label,
                 P.draw_skill_metric(ax, curves, metric, zero_line=zero)
                 if ylims and (var, lev, metric) in ylims:
                     ax.set_ylim(*ylims[(var, lev, metric)])   # shared scale across years
-                ax.set_title(f"{label}@{lev} hPa — mean {'RMSE' if metric=='rmse' else 'bias'} "
-                             f"over {scope_label} ({n_events} events, > {D.PTAG})",
-                             fontsize=10.5, color=P.INK, loc="left")
                 ax.set_ylabel(P.skill_ylabel(metric, label, lev, units))
                 if len(curves) > 1:
-                    ax.legend(loc="upper left", fontsize=9, framealpha=0.9)
+                    ax.legend(loc="best", fontsize=9, framealpha=0.9)
                 P.despine(ax)
                 fig.tight_layout()
                 out = outdir / f"{metric}-vs-lead_{short}_L{lev:04d}.pdf"
@@ -414,9 +406,6 @@ def run_aggregate_byyear(year_runs, defn, ylims=None, fmts=None):
                 fig = P.skill_facets(panels, metric, zero_line=zero,
                                      ylabel=P.skill_ylabel(metric, label, lev, units),
                                      ylim=(ylims or {}).get((var, lev, metric)))
-                fig.suptitle(f"{label}@{lev} hPa — mean {'RMSE' if metric=='rmse' else 'bias'} "
-                             f"over {defn.name} heat waves per year (> {D.PTAG})",
-                             y=1.02, fontsize=11)
                 out = outdir / f"{metric}-vs-lead_{short}_L{lev:04d}.pdf"
                 for p in P.save_fig(fig, out, fmts=fmts):
                     print(f"[by-year] wrote {p.relative_to(C.FIG_ROOT)}", flush=True)
