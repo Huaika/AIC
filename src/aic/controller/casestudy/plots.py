@@ -154,7 +154,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
         per = src.drift_per_init(var, meta["short"], [lev], [gp],
                                  files=files, cache=False)
         raw.append((src.model, per))
-        agg = C.aggregate(per, ci_metrics=("bias",))
+        agg = C.aggregate(per, ci_metrics=("bias", "rmse"))
         a = agg[(agg["region"] == gp.key) & (agg["level"] == lev)].sort_values("lead_hours")
         if not a.empty:
             curves.append((src, a))
@@ -327,7 +327,7 @@ def _aggregate_curves(pool, model_sources, var, lev):
         allper = pd.concat(pers, ignore_index=True)
         allper["region"] = "all"
         curves.append((src.color, src.pretty,
-                       C.aggregate(allper, ci_metrics=("bias",)).sort_values("lead_hours")))
+                       C.aggregate(allper, ci_metrics=("bias", "rmse")).sort_values("lead_hours")))
     return curves
 
 
