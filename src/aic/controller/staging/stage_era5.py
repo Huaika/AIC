@@ -27,7 +27,6 @@ Environment:
 """
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 
@@ -36,13 +35,12 @@ import pandas as pd
 import xarray as xr
 import netCDF4
 
-YEAR = int(os.environ["ERA5_YEAR"])
-MONTH = int(os.environ["ERA5_MONTH"])
-BATCH = int(os.environ.get("ERA5_BATCH", "8"))
-OUT_DIR = Path(os.environ.get(
-    "ERA5_OUT_DIR",
-    f"/pfs/work9/workspace/scratch/ka_hc5935-ai-climate/era5_{YEAR}/inputs",
-))
+from aic import config
+
+YEAR = int(config.env_required("ERA5_YEAR"))
+MONTH = int(config.env_required("ERA5_MONTH"))
+BATCH = config.env_int("ERA5_BATCH", 8)
+OUT_DIR = Path(config.env_str("ERA5_OUT_DIR", config.era5_inputs_dir(YEAR, "inputs")))
 
 ERA5_PATH = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
 
@@ -73,11 +71,11 @@ def month_times() -> np.ndarray:
     start = pd.Timestamp(YEAR, MONTH, 1)
     end = start + pd.offsets.MonthEnd(1) + pd.Timedelta(hours=18)
     times = pd.date_range(start, end, freq="6h").values.astype("datetime64[ns]")
-    end_date = os.environ.get("ERA5_END_DATE", "").strip()
+    end_date = config.env_str("ERA5_END_DATE", "").strip()
     if end_date:
         cutoff = (pd.Timestamp(end_date) + pd.Timedelta(days=1)).to_datetime64()
         times = times[times < cutoff]
-    limit = int(os.environ.get("ERA5_LIMIT", "0"))   # smoke-test cap
+    limit = config.env_int("ERA5_LIMIT", 0)   # smoke-test cap
     return times[:limit] if limit > 0 else times
 
 

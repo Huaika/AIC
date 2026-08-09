@@ -53,24 +53,20 @@ import xarray
 from dinosaur import horizontal_interpolation, spherical_harmonic, xarray_utils
 import neuralgcm
 
+from aic import config
+
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-DATA_DIR = Path(os.environ.get(
-    "NG_DATA_DIR",
-    "/pfs/work9/workspace/scratch/ka_je2428-nextgems_2049",
-))
-OUT_DIR = Path(os.environ.get(
-    "NG_OUT_DIR",
-    "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/nextgems_2049/predictions",
-))
-MODEL_NAME = os.environ.get("NG_MODEL", "v1/deterministic_2_8_deg.pkl")
-YEAR = os.environ.get("NG_YEAR", "2049")
-ROLLOUT_DAYS = int(os.environ.get("NG_ROLLOUT_DAYS", "10"))
-OUT_H = int(os.environ.get("NG_OUT_H", "6"))
-SST_STRIDE_H = int(os.environ.get("NG_SST_STRIDE_H", "24"))
-INIT_STRIDE_DAYS = int(os.environ.get("NG_INIT_STRIDE_DAYS", "1"))
-SEED = int(os.environ.get("NG_SEED", "42"))
+DATA_DIR = Path(config.env_str("NG_DATA_DIR", config.NEXTGEMS_ROOT))
+OUT_DIR = Path(config.env_str("NG_OUT_DIR", config.NEXTGEMS_2049_PRED))
+MODEL_NAME = config.env_str("NG_MODEL", "v1/deterministic_2_8_deg.pkl")
+YEAR = config.env_str("NG_YEAR", "2049")
+ROLLOUT_DAYS = config.env_int("NG_ROLLOUT_DAYS", 10)
+OUT_H = config.env_int("NG_OUT_H", 6)
+SST_STRIDE_H = config.env_int("NG_SST_STRIDE_H", 24)
+INIT_STRIDE_DAYS = config.env_int("NG_INIT_STRIDE_DAYS", 1)
+SEED = config.env_int("NG_SEED", 42)
 
 # NextGEMS native variable names -> NeuralGCM names (only renames present keys).
 RENAME = {
@@ -261,8 +257,8 @@ def main() -> None:
 
     all_dates = init_dates_for_year(ds3)
 
-    explicit = os.environ.get("NG_INIT_DATE", "").strip()
-    idx_env = os.environ.get("NG_INIT_INDEX", "").strip()
+    explicit = config.env_str("NG_INIT_DATE", "").strip()
+    idx_env = config.env_str("NG_INIT_INDEX", "").strip()
     if explicit:
         targets = [explicit]
     elif idx_env:

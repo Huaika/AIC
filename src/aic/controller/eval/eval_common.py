@@ -25,7 +25,6 @@ exactly as before (NG_LEVEL_INTERVAL etc.).
 """
 from __future__ import annotations
 
-import os
 import pickle
 from pathlib import Path
 
@@ -38,6 +37,7 @@ import xarray as xr
 # build_truth_chunk), so importing this module -- and thus every eval/plot module and
 # the tests -- does not require the ML stack.
 
+from aic import config
 from aic.config import WORKSPACE as WS
 from aic.regions import (
     REGIONS, DEFAULT_REGIONS, CONTINENTS, select_region, region_extent)
@@ -122,21 +122,21 @@ def _resolve_run() -> str:
     """Active RUN for the module globals. EVAL_RUN wins; otherwise (multi-source
     plotting) derive it from EVAL_SOURCES' FIRST model + EVAL_YEAR + EVAL_DATASET
     so C.OUTDIR/FIGROOT/MODEL/... still resolve to a valid representative run."""
-    run = os.environ.get("EVAL_RUN", "").strip()
+    run = config.env_str("EVAL_RUN", "").strip()
     if run:
         return run
     # EVAL_RUNS (explicit run-key list, e.g. multi-year OOD): the first key is the
     # representative run for the module globals (OUTDIR / FIG_ROOT / MODEL / ...).
-    runs = os.environ.get("EVAL_RUNS", "").strip()
+    runs = config.env_str("EVAL_RUNS", "").strip()
     if runs:
         first = runs.replace(",", " ").split()[0].strip()
         if first in RUNS:
             return first
-    srcs = os.environ.get("EVAL_SOURCES", "").strip()
+    srcs = config.env_str("EVAL_SOURCES", "").strip()
     if srcs:
         model = srcs.replace(",", " ").split()[0].strip()
-        dataset = os.environ.get("EVAL_DATASET", "era5").strip()
-        year = int(os.environ.get("EVAL_YEAR", "0") or 0)
+        dataset = config.env_str("EVAL_DATASET", "era5").strip()
+        year = config.env_int("EVAL_YEAR", 0)
         for r, cfg in RUNS.items():
             m = "graphcast" if r.startswith("graphcast") else "neuralgcm"
             if m == model and cfg["truth_kind"] == dataset and int(cfg["year"]) == year:
@@ -164,14 +164,13 @@ DATASET = CFG["truth_kind"]
 # live on workspace scratch (out of the repo). Both env-overridable. REPO_ROOT is
 # derived from this file: src/aic/controller/eval/eval_common.py -> parents[4] = repo.
 REPO_ROOT = Path(__file__).resolve().parents[4]
-FIG_ROOT = Path(os.environ.get("EVAL_FIG_ROOT", str(REPO_ROOT / "outputs" / "figures")))
-RESULTS_ROOT = Path(os.environ.get(
-    "EVAL_RESULTS_ROOT", f"{WS}/ka_dm9435-ai-climate/eval_results"))
+FIG_ROOT = Path(config.env_str("EVAL_FIG_ROOT", str(REPO_ROOT / "outputs" / "figures")))
+RESULTS_ROOT = Path(config.env_str("EVAL_RESULTS_ROOT", f"{config.DATA_ROOT}/eval_results"))
 OUTDIR = RESULTS_ROOT / f"results_eval_{RUN}"
 FIGROOT = FIG_ROOT / RUN
 OUTDIR.mkdir(parents=True, exist_ok=True)
 
-TRUTH_BATCH = int(os.environ.get("EVAL_TRUTH_BATCH", "24"))
+TRUTH_BATCH = config.env_int("EVAL_TRUTH_BATCH", 24)
 
 # --------------------------------------------------------------------------- #
 # Variable registry -- the prognostic 3D fields present in every prediction
@@ -206,7 +205,7 @@ DEFAULT_VARS = ["temperature", "geopotential", "specific_humidity",
 
 
 def selected_variables() -> list[str]:
-    env = os.environ.get("EVAL_VARS", "").strip()
+    env = config.env_str("EVAL_VARS", "").strip()
     vs = ([v.strip() for v in env.replace(",", " ").split()] if env
           else list(DEFAULT_VARS))
     bad = [v for v in vs if v not in VARIABLES]
@@ -230,7 +229,7 @@ def selected_variables() -> list[str]:
 def selected_regions() -> list[str]:
     """EVAL_REGIONS (comma/space list) or, if unset, ['world']. Pass
     EVAL_REGIONS=all for world + every continent."""
-    env = os.environ.get("EVAL_REGIONS", "").strip()
+    env = config.env_str("EVAL_REGIONS", "").strip()
     if not env:
         rs = list(DEFAULT_REGIONS)
     elif env.lower() == "all":
@@ -268,7 +267,7 @@ def period_dir_name(period: int) -> str:
 def selected_periods() -> list[int]:
     """EVAL_MONTHS: comma/space list of 0..12 (0 = entire year), or 'all'
     (= entire year + every month). Unset -> [0] (entire year only)."""
-    env = os.environ.get("EVAL_MONTHS", "").strip()
+    env = config.env_str("EVAL_MONTHS", "").strip()
     if not env:
         ps = [0]
     elif env.lower() == "all":
@@ -369,23 +368,23 @@ def prediction_grid():
 
 
 def _interval() -> int:
-    return int(os.environ.get("NG_LEVEL_INTERVAL", "50"))
+    return config.env_int("NG_LEVEL_INTERVAL", 50)
 
 
 def level_tag() -> str:
-    if os.environ.get("NG_LEVELS", "").strip():
+    if config.env_str("NG_LEVELS", "").strip():
         return f"custom{len(requested_levels())}"
     return f"i{_interval()}"
 
 
 def requested_levels() -> list[int]:
-    explicit = os.environ.get("NG_LEVELS", "").strip()
+    explicit = config.env_str("NG_LEVELS", "").strip()
     if explicit:
         req = [int(float(x)) for x in explicit.replace(",", " ").split()]
     else:
         interval = _interval()
-        lo = int(os.environ.get("NG_LEVEL_MIN", str(interval)))
-        hi = int(os.environ.get("NG_LEVEL_MAX", "1000"))
+        lo = config.env_int("NG_LEVEL_MIN", interval)
+        hi = config.env_int("NG_LEVEL_MAX", 1000)
         req = list(range(lo, hi + 1, interval))
     req = [l for l in req if 0 < l <= 1000]
     avail = set(prediction_levels())
@@ -402,7 +401,7 @@ def render_levels(levels: list[int]) -> list[int]:
     list). Unset -> all of ``levels``. Lets you re-render specific levels from the
     full (e.g. i50) cache WITHOUT recomputing -- the cache key (level_tag) is
     unchanged, only the render loop is filtered."""
-    env = os.environ.get("NG_PLOT_LEVELS", "").strip()
+    env = config.env_str("NG_PLOT_LEVELS", "").strip()
     if not env:
         return levels
     want = {int(float(x)) for x in env.replace(",", " ").split()}
@@ -501,7 +500,7 @@ def truth_at_levels(var: str, levels: list[int]) -> xr.DataArray:
     key = (var, tuple(levels))
     if key in _TRUTH_AT:
         return _TRUTH_AT[key]
-    if not native_truth_nc(var).exists() and os.environ.get("EVAL_REQUIRE_CACHE"):
+    if not native_truth_nc(var).exists() and config.env_str("EVAL_REQUIRE_CACHE"):
         raise SystemExit(
             f"[truth] cache missing for {var} ({native_truth_nc(var)}) and "
             f"EVAL_REQUIRE_CACHE is set -- build it first via the truth-chunk + "

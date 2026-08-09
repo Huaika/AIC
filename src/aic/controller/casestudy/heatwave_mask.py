@@ -20,7 +20,6 @@ The active definition + percentile come from ``controller/heatwave/definitions``
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,19 +27,19 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from aic import config
 from aic.controller.heatwave import detect as DET
 from aic.regions import region_mask
 
-CLIM_DIR = Path(os.environ.get(
-    "HW_CACHE_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_clim"))
-DEFAULT_WINDOW = int(os.environ.get("HW_WINDOW", "5"))   # +/- day-of-year window
-DEFAULT_COVER = float(os.environ.get("HW_CS_COVER", "0.02"))  # region area fraction
-DEFAULT_GAP = int(os.environ.get("HW_EPISODE_GAP", "2"))      # merge gap (days)
-DEFAULT_MIN_DAYS = int(os.environ.get("HW_CS_MIN_DAYS", "3"))  # min episode length
+CLIM_DIR = Path(config.env_str("HW_CACHE_DIR", config.HEATWAVE_CLIM))
+DEFAULT_WINDOW = config.env_int("HW_WINDOW", 5)          # +/- day-of-year window
+DEFAULT_COVER = config.env_float("HW_CS_COVER", 0.02)   # region area fraction
+DEFAULT_GAP = config.env_int("HW_EPISODE_GAP", 2)       # merge gap (days)
+DEFAULT_MIN_DAYS = config.env_int("HW_CS_MIN_DAYS", 3)  # min episode length
 # cells farther apart than this Manhattan distance (in grid cells) are NOT the same
 # heat wave -- unless a later day bridges them within this reach (spatio-temporal
 # connectivity). 0 falls back to the old time-only merging.
-DEFAULT_MANHATTAN = int(os.environ.get("HW_MANHATTAN", "4"))
+DEFAULT_MANHATTAN = config.env_int("HW_MANHATTAN", 4)
 
 
 def _load_stats(tag: str, year: int) -> xr.Dataset:
@@ -236,10 +235,10 @@ def _main() -> None:
     """Enumerate episodes for a definition/percentile/year/region (text only)."""
     from aic.controller.heatwave import definitions as D
 
-    defn_name = os.environ.get("HW_CS_DEF", "mixture")
+    defn_name = config.env_str("HW_CS_DEF", "mixture")
     defn = D.BY_NAME[defn_name]
-    year = int(os.environ.get("HW_YEAR", "2023"))
-    region = os.environ.get("HW_SPEC_REGION", "europe").strip().lower()
+    year = config.env_int("HW_YEAR", 2023)
+    region = config.env_str("HW_SPEC_REGION", "europe").strip().lower()
     window = DEFAULT_WINDOW
     print(f"[casestudy] def={defn.name} pct={defn.pct} ({D.PTAG}) window=+/-{window}d "
           f"region={region} year={year}", flush=True)

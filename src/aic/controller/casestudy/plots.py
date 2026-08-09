@@ -24,7 +24,6 @@ definition. Figures: ``outputs/figures/case_study/<def>_<ptag>/<year>/<episode>/
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -42,8 +41,8 @@ from aic.controller.casestudy import heatwave_mask as HM
 from aic.controller.heatwave import definitions as D
 from aic.regions import region_extent
 
-BEFORE = int(os.environ.get("CS_BEFORE", "10"))    # rollout window before episode
-AFTER = int(os.environ.get("CS_AFTER", "10"))      # brief window after (valid axis)
+BEFORE = config.env_int("CS_BEFORE", 10)    # rollout window before episode
+AFTER = config.env_int("CS_AFTER", 10)      # brief window after (valid axis)
 # variable -> level(s) to evaluate (T at 850, Z at 500 for the case study)
 CS_LEVELS = {"temperature": [850], "geopotential": [500]}
 
@@ -292,7 +291,7 @@ def run_year(sources, defn, year, pool=None, window=HM.DEFAULT_WINDOW, region="e
     print(f"=== case study {defn.name} > {D.PTAG}: {models} ({year}) ===", flush=True)
     active = HM.active_mask_da(defn, year, window, region)   # 2.8deg, grid-independent
     eps = HM.episodes(active, region)
-    only = os.environ.get("CS_ONLY_EP", "").strip()
+    only = config.env_str("CS_ONLY_EP", "").strip()
     if only:
         want = {int(x) for x in only.replace(",", " ").split()}
         eps = [e for e in eps if e.idx in want]
@@ -395,10 +394,10 @@ def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label,
 
 def main():
     from collections import defaultdict
-    defn = D.BY_NAME[os.environ.get("HW_CS_DEF", "mixture")]
-    years = [int(y) for y in os.environ.get("CS_YEARS", "2023 2026").replace(",", " ").split()]
-    dataset = os.environ.get("EVAL_DATASET", "era5")
-    models = os.environ.get("CS_MODELS", "neuralgcm,graphcast").replace(",", " ").split()
+    defn = D.BY_NAME[config.env_str("HW_CS_DEF", "mixture")]
+    years = [int(y) for y in config.env_list("CS_YEARS", ["2023", "2026"])]
+    dataset = config.env_str("EVAL_DATASET", "era5")
+    models = config.env_list("CS_MODELS", ["neuralgcm", "graphcast"])
     pool = defaultdict(list)             # every episode of every year (all-years agg)
     rep, n_events = {}, 0
     year_runs = []                       # (year, ypool, srcs, n_year), in order

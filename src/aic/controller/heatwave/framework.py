@@ -37,7 +37,6 @@ run it as a driver (see __main__) to build a catalog for one or more regions.
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
@@ -47,6 +46,7 @@ import xarray as xr
 
 # Named regions: single source of truth (a region may also be given as a single
 # point via point=(lat, lon) to regional_series()).
+from aic import config
 from aic.regions import REGIONS, select_region, wrap180, to_lon180
 
 # Default severity classes, keyed by where an event's cumulative-exceedance
@@ -243,9 +243,7 @@ def to_dataframe(events: list[Heatwave]) -> pd.DataFrame:
 # driver -- build a catalog for one or more regions and save CSVs
 # --------------------------------------------------------------------------- #
 def _default_files():
-    d = Path(os.environ.get(
-        "HW_DATA_DIR",
-        "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave"))
+    d = Path(config.env_str("HW_DATA_DIR", config.ERA5_HEATWAVE))
     return sorted(d.glob("t850_24h_world_*.nc"))
 
 
@@ -253,22 +251,20 @@ def main():
     files = _default_files()
     if not files:
         raise SystemExit("no t850_24h_world_*.nc found (set HW_DATA_DIR)")
-    regions = os.environ.get("HW_REGIONS", "europe").replace(",", " ").split()
+    regions = config.env_list("HW_REGIONS", ["europe"])
     # optional point analyses: HW_POINTS="lat,lon; lat,lon" (nearest grid cell) --
     # the intended per-location scale for detecting localized heat waves.
     points = []
-    for pair in os.environ.get("HW_POINTS", "").split(";"):
+    for pair in (config.env_str("HW_POINTS", "") or "").split(";"):
         pair = pair.strip()
         if pair:
             la, lo = (float(x) for x in pair.split(","))
             points.append((la, lo))
-    q = float(os.environ.get("HW_Q", "0.95"))
-    window = int(os.environ.get("HW_WINDOW", "5"))
-    min_dur = int(os.environ.get("HW_MIN_DURATION", "3"))
-    reduce = os.environ.get("HW_REDUCE", "mean")
-    outdir = Path(os.environ.get(
-        "HW_CATALOG_DIR",
-        "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_catalog"))
+    q = config.env_float("HW_Q", 0.95)
+    window = config.env_int("HW_WINDOW", 5)
+    min_dur = config.env_int("HW_MIN_DURATION", 3)
+    reduce = config.env_str("HW_REDUCE", "mean")
+    outdir = Path(config.env_str("HW_CATALOG_DIR", config.HEATWAVE_CATALOG))
     outdir.mkdir(parents=True, exist_ok=True)
     print(f"[hw] {len(files)} yearly files; regions={regions} q={q} "
           f"window=+/-{window}d min_duration={min_dur} reduce={reduce}", flush=True)

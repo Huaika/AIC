@@ -11,7 +11,6 @@ plotters stay thin and consistent (model colours come from ``sources.MODEL_COLOR
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -20,13 +19,14 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+from aic import config
 from aic.config import COAST_ZARR
 from aic.regions import to_lon180
 from aic.style import INK, GRID, MUTED  # re-exported for the view modules' back-compat
 
 # default output file type for every figure; override per call (save_fig(fmts=...))
 # or globally via AIC_FIG_FMT.
-DEFAULT_FIG_FMT = os.environ.get("AIC_FIG_FMT", "pdf")
+DEFAULT_FIG_FMT = config.env_str("AIC_FIG_FMT", "pdf")
 
 
 def save_fig(fig, path, *, fmts=None, dpi=150, close=True):

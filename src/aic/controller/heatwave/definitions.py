@@ -26,13 +26,14 @@ Daily-statistics files (see controller/heatwave/staging_daily): one per
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
+
+from aic import config
 
 # Detection percentile for the WINDOWED (doy) definitions. Configurable so the whole
 # comparison can be re-run at a stricter threshold (e.g. HW_PCT=0.99) and saved
 # alongside the default. PTAG is the filename/label token (p95, p99, ...).
-PCT = float(os.environ.get("HW_PCT", "0.95"))
+PCT = config.env_float("HW_PCT", 0.95)
 PP = round(PCT * 100)
 PTAG = f"p{PP}"
 

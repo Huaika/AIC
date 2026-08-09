@@ -28,7 +28,6 @@ Each (model, dataset, year) maps to exactly one RUN key in eval_common.RUNS.
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -431,19 +430,19 @@ def resolve_sources() -> list[Source]:
     EVAL_SOURCES is unset, a single Source from EVAL_RUN (backward compatible)."""
     # EVAL_RUNS: explicit run-key list (any model/dataset/year mix on one plot, e.g.
     # the multi-year OOD spaghetti). Colour by model; years are told apart downstream.
-    env_runs = os.environ.get("EVAL_RUNS", "").strip()
+    env_runs = config.env_str("EVAL_RUNS", "").strip()
     if env_runs:
         runs = [r.strip() for r in env_runs.replace(",", " ").split() if r.strip()]
         srcs = [Source.from_run(r, color=model_color(_model_of(r))) for r in runs]
         print(f"[sources] {len(srcs)} explicit run(s): "
               + ", ".join(f"{s.pretty}({s.run})" for s in srcs))
         return srcs
-    env = os.environ.get("EVAL_SOURCES", "").strip()
+    env = config.env_str("EVAL_SOURCES", "").strip()
     if not env:
         return [Source.from_run(C.RUN, color=PALETTE[0])]
     models = [m.strip() for m in env.replace(",", " ").split() if m.strip()]
-    dataset = os.environ.get("EVAL_DATASET", "era5").strip()
-    yr = os.environ.get("EVAL_YEAR", "").strip()
+    dataset = config.env_str("EVAL_DATASET", "era5").strip()
+    yr = config.env_str("EVAL_YEAR", "").strip()
     if not yr:
         raise SystemExit("EVAL_SOURCES set -> EVAL_YEAR is required")
     year = int(yr)
@@ -493,13 +492,13 @@ def figure_dir(sources, period, region, variable, kind) -> Path:
 def requested_levels(sources) -> list[int]:
     """Env-requested levels (NG_LEVELS / NG_LEVEL_INTERVAL etc.) intersected with
     the levels present in EVERY source's prediction grid."""
-    explicit = os.environ.get("NG_LEVELS", "").strip()
+    explicit = config.env_str("NG_LEVELS", "").strip()
     if explicit:
         req = [int(float(x)) for x in explicit.replace(",", " ").split()]
     else:
-        interval = int(os.environ.get("NG_LEVEL_INTERVAL", "50"))
-        lo = int(os.environ.get("NG_LEVEL_MIN", str(interval)))
-        hi = int(os.environ.get("NG_LEVEL_MAX", "1000"))
+        interval = config.env_int("NG_LEVEL_INTERVAL", 50)
+        lo = config.env_int("NG_LEVEL_MIN", interval)
+        hi = config.env_int("NG_LEVEL_MAX", 1000)
         req = list(range(lo, hi + 1, interval))
     req = [l for l in req if 0 < l <= 1000]
     avail = set(sources[0].prediction_levels())

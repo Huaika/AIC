@@ -34,7 +34,6 @@ years with xr.open_mfdataset for the threshold + spell analysis.
 """
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 
@@ -46,18 +45,17 @@ import netCDF4
 ERA5_PATH = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
 
 # Named regions: single source of truth.
+from aic import config
 from aic.regions import REGIONS, select_region
 
-YEAR = int(os.environ["HW_YEAR"])
-LEVEL = int(os.environ.get("HW_LEVEL", "850"))
-CADENCE = int(os.environ.get("HW_CADENCE", "24"))
-HOUR0 = int(os.environ.get("HW_HOUR0", "0"))
-REGION = os.environ.get("HW_REGION", "world").strip().lower()
-VAR = os.environ.get("HW_VAR", "temperature").strip()
-BATCH = int(os.environ.get("HW_BATCH", "20"))
-OUT_DIR = Path(os.environ.get(
-    "HW_OUT_DIR",
-    "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave"))
+YEAR = int(config.env_required("HW_YEAR"))
+LEVEL = config.env_int("HW_LEVEL", 850)
+CADENCE = config.env_int("HW_CADENCE", 24)
+HOUR0 = config.env_int("HW_HOUR0", 0)
+REGION = config.env_str("HW_REGION", "world").strip().lower()
+VAR = config.env_str("HW_VAR", "temperature").strip()
+BATCH = config.env_int("HW_BATCH", 20)
+OUT_DIR = Path(config.env_str("HW_OUT_DIR", config.ERA5_HEATWAVE))
 
 if REGION not in REGIONS:
     raise SystemExit(f"HW_REGION must be one of {list(REGIONS)} (got {REGION!r})")
@@ -128,7 +126,7 @@ def main() -> None:
 
     tmax = pd.Timestamp(ds.time.values[-1])
     times = sample_times(tmax)
-    limit = int(os.environ.get("HW_LIMIT", "0"))
+    limit = config.env_int("HW_LIMIT", 0)
     if limit > 0:
         times = times[:limit]
         print(f"[hw] HW_LIMIT={limit} -> smoke run, {len(times)} steps only",

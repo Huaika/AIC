@@ -55,27 +55,25 @@ import xarray
 from dinosaur import horizontal_interpolation, spherical_harmonic, xarray_utils
 import neuralgcm
 
+from aic import config
+
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-YEAR = int(os.environ["ERA5_YEAR"])
-IN_DIR = Path(os.environ.get(
-    "ERA5_IN_DIR",
-    f"/pfs/work9/workspace/scratch/ka_hc5935-ai-climate/era5_{YEAR}/inputs"))
-OUT_DIR = Path(os.environ.get(
-    "ERA5_OUT_DIR",
-    f"/pfs/work9/workspace/scratch/ka_hc5935-ai-climate/era5_{YEAR}/predictions"))
-MODEL_NAME = os.environ.get("ERA5_MODEL", "v1/deterministic_2_8_deg.pkl")
-ROLLOUT_DAYS = int(os.environ.get("ERA5_ROLLOUT_DAYS", "10"))
-OUT_H = int(os.environ.get("ERA5_OUT_H", "6"))
-SST_STRIDE_H = int(os.environ.get("ERA5_SST_STRIDE_H", "24"))
-INIT_STRIDE_DAYS = int(os.environ.get("ERA5_INIT_STRIDE_DAYS", "1"))
-SEED = int(os.environ.get("ERA5_SEED", "42"))
+YEAR = int(config.env_required("ERA5_YEAR"))
+IN_DIR = Path(config.env_str("ERA5_IN_DIR", config.era5_inputs_dir(YEAR, "inputs")))
+OUT_DIR = Path(config.env_str("ERA5_OUT_DIR", config.era5_inputs_dir(YEAR, "predictions")))
+MODEL_NAME = config.env_str("ERA5_MODEL", "v1/deterministic_2_8_deg.pkl")
+ROLLOUT_DAYS = config.env_int("ERA5_ROLLOUT_DAYS", 10)
+OUT_H = config.env_int("ERA5_OUT_H", 6)
+SST_STRIDE_H = config.env_int("ERA5_SST_STRIDE_H", 24)
+INIT_STRIDE_DAYS = config.env_int("ERA5_INIT_STRIDE_DAYS", 1)
+SEED = config.env_int("ERA5_SEED", 42)
 # For a partial current year: allow init-days up to the ERA5 data front (instead
 # of front - ROLLOUT_DAYS) so the 10-day forecast reaches PAST the front. The
 # out-of-data SST/sea-ice forcing is then held constant at its last real value
 # (persistence). Default off -> unchanged behaviour for full-year runs.
-PAST_FRONT = os.environ.get("ERA5_FORECAST_PAST_FRONT", "0").lower() in ("1", "true", "yes")
+PAST_FRONT = config.env_bool("ERA5_FORECAST_PAST_FRONT", False)
 
 
 def load_model() -> neuralgcm.PressureLevelModel:
@@ -217,8 +215,8 @@ def main() -> None:
     ds = open_era5()
     all_dates = init_dates_for_year(ds)
 
-    start = int(os.environ.get("ERA5_INIT_START", "0"))
-    count = int(os.environ.get("ERA5_INIT_COUNT", "10"))
+    start = config.env_int("ERA5_INIT_START", 0)
+    count = config.env_int("ERA5_INIT_COUNT", 10)
     targets = all_dates[start:start + count]
     if not targets:
         print(f"ERA5_INIT_START={start} beyond {len(all_dates)} init-days; "

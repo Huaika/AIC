@@ -14,7 +14,6 @@ Env: HW_WINDOWS (default "0,1,3,5,7"), HW_SPEC_REGION (default world),
 HW_YEAR (default 2023), HW_DEFS, HW_DAILY_DIR, HW_CACHE_DIR, HW_FIG_DIR.
 """
 from __future__ import annotations
-import os
 from pathlib import Path
 
 import numpy as np
@@ -26,20 +25,18 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.lines import Line2D
 
+from aic import config
 from aic.controller.heatwave import definitions as D
 from aic.controller.heatwave import detect as DET
 from aic.controller.heatwave.grid import load_daily_regridded
 from aic.regions import region_mask
 
-DAILY_DIR = os.environ.get(
-    "HW_DAILY_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave_daily")
-CACHE_DIR = os.environ.get(
-    "HW_CACHE_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_clim")
-FIGDIR = Path(os.environ.get(
-    "HW_FIG_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_figures"))
-WINDOWS = [int(x) for x in os.environ.get("HW_WINDOWS", "0,1,3,5,7").replace(",", " ").split()]
-REGION = os.environ.get("HW_SPEC_REGION", "world").strip().lower()
-YEAR = int(os.environ.get("HW_YEAR", "2023"))
+DAILY_DIR = config.env_str("HW_DAILY_DIR", config.ERA5_HEATWAVE_DAILY)
+CACHE_DIR = config.env_str("HW_CACHE_DIR", config.HEATWAVE_CLIM)
+FIGDIR = Path(config.env_str("HW_FIG_DIR", config.HEATWAVE_FIGURES))
+WINDOWS = [int(x) for x in config.env_list("HW_WINDOWS", ["0", "1", "3", "5", "7"])]
+REGION = config.env_str("HW_SPEC_REGION", "world").strip().lower()
+YEAR = config.env_int("HW_YEAR", 2023)
 REGION_NAME = "the world" if REGION == "world" else REGION.replace("_", " ").title()
 REF = range(1991, 2021)
 # descriptive definition labels (variable + cadence), shared by all comparison plots
@@ -79,7 +76,7 @@ def month_ticks(year):
 
 def main():
     FIGDIR.mkdir(parents=True, exist_ok=True)
-    defs = D.selected(os.environ.get("HW_DEFS"))
+    defs = D.selected(config.env_str("HW_DEFS"))
     # load ref+target once per (tag, reference-period); union the stats each key needs
     keys = {}
     for d in defs:

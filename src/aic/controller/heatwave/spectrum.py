@@ -22,21 +22,20 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from aic import config
 from aic.regions import REGIONS, region_mask
 from aic.controller.heatwave.grid import build_regridder, regrid_da
 from aic.controller.heatwave.climatology import doy_percentile
 from aic.controller.heatwave.detect import spell_events, cell_area_km2, MIN_DUR
 
-DATA = os.environ.get(
-    "HW_DATA_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave")
-FIGDIR = Path(os.environ.get(
-    "HW_FIG_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_figures"))
-Q = float(os.environ.get("HW_Q", "0.95"))
+DATA = config.env_str("HW_DATA_DIR", config.ERA5_HEATWAVE)
+FIGDIR = Path(config.env_str("HW_FIG_DIR", config.HEATWAVE_FIGURES))
+Q = config.env_float("HW_Q", 0.95)
 WINDOWS = list(range(0, 8))
 YEAR = 2023
-REGRID_BATCH = int(os.environ.get("HW_REGRID_BATCH", "300"))
+REGRID_BATCH = config.env_int("HW_REGRID_BATCH", 300)
 RES_TAG = "2p8deg"
-REGION = os.environ.get("HW_SPEC_REGION", "world").strip().lower()
+REGION = config.env_str("HW_SPEC_REGION", "world").strip().lower()
 
 COUNT_COLOR = "#2166ac"; AREA_COLOR = "#b35806"
 from aic.style import INK, GRID, MUTED  # shared palette (single source of truth)

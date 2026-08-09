@@ -25,9 +25,12 @@ window = config.env_int("HW_WINDOW", 5)
 pct    = config.env_float("HW_PCT", 0.95)
 force  = config.env_bool("AIC_FORCE_REBUILD", False)
 years  = config.env_list("CS_YEARS", ["2023", "2026"])   # comma/space separated
+year   = config.env_required("ERA5_YEAR")                # no default -> clear error
 ```
 
-New code should use these; existing modules are being migrated incrementally.
+All first-party env reads go through these (the vendored GraphCast fork excepted);
+the only remaining raw `os.environ` calls are the `os.environ.setdefault(...)` JAX
+flags in the rollout scripts, which *set* env for a subprocess rather than read it.
 
 ## The main knobs by area
 

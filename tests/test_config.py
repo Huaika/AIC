@@ -38,12 +38,28 @@ def test_env_list(monkeypatch):
     assert cfg.env_list("AIC_T_L", ["x"]) == ["x"]
 
 
+def test_env_required(monkeypatch):
+    import pytest
+    monkeypatch.setenv("AIC_T_REQ", "hi")
+    assert cfg.env_required("AIC_T_REQ") == "hi"
+    monkeypatch.delenv("AIC_T_REQ", raising=False)
+    with pytest.raises(SystemExit):
+        cfg.env_required("AIC_T_REQ")
+
+
 def test_paths_override(monkeypatch):
     monkeypatch.setenv("AIC_WORKSPACE", "/tmp/ws")
-    monkeypatch.delenv("AIC_DATA_ROOT", raising=False)
-    monkeypatch.delenv("AIC_COAST_ZARR", raising=False)
+    for k in ("AIC_DATA_ROOT", "AIC_COAST_ZARR", "AIC_NEXTGEMS_ROOT",
+              "AIC_ERA5_INPUTS_ROOT"):
+        monkeypatch.delenv(k, raising=False)
     reloaded = importlib.reload(cfg)
-    assert reloaded.WORKSPACE == "/tmp/ws"
-    assert reloaded.DATA_ROOT.startswith("/tmp/ws/")
+    # data subdirs derive from DATA_ROOT which derives from WORKSPACE
+    assert reloaded.DATA_ROOT == "/tmp/ws/ka_dm9435-ai-climate"
+    assert reloaded.HEATWAVE_CLIM == "/tmp/ws/ka_dm9435-ai-climate/heatwave_clim"
+    assert reloaded.ERA5_HEATWAVE_DAILY.endswith("/era5_heatwave_daily")
     assert reloaded.COAST_ZARR.startswith("/tmp/ws/")
+    # path helpers
+    assert reloaded.era5_inputs_dir(2023, "inputs").endswith("/era5_2023/inputs")
+    assert reloaded.nextgems_dir(2049) == reloaded.NEXTGEMS_ROOT
+    assert reloaded.nextgems_dir(2050).endswith("ka_je2428-nextgems_2050")
     importlib.reload(cfg)  # restore defaults for other tests

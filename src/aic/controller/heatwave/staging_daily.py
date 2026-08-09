@@ -26,7 +26,6 @@ Output: <out>/<tag>_daily_<year>.nc, dims (time=days, latitude, longitude), nati
 """
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 
@@ -35,21 +34,21 @@ import pandas as pd
 import xarray as xr
 import netCDF4
 
+from aic import config
+
 # source zarr (public, anon). Default ARCO-ERA5 0.25 deg; override HW_ZARR with a
 # WeatherBench2 coarse dataset (much cheaper) for the reference period.
-SRC_ZARR = os.environ.get(
+SRC_ZARR = config.env_str(
     "HW_ZARR", "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3")
 
-YEAR = int(os.environ["HW_YEAR"])
-ARCO_VAR = os.environ.get("HW_ARCO_VAR", "temperature").strip()
-LEVEL = int(os.environ.get("HW_LEVEL", "850"))
-CADENCE = int(os.environ.get("HW_CADENCE", "6"))
-TAG = os.environ.get("HW_TAG", "t850").strip()
-STATS = [s.strip() for s in os.environ.get("HW_STATS", "min,max,val").split(",") if s.strip()]
-DAY_BATCH = int(os.environ.get("HW_DAY_BATCH", "10"))
-OUT_DIR = Path(os.environ.get(
-    "HW_OUT_DIR",
-    "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave_daily"))
+YEAR = int(config.env_required("HW_YEAR"))
+ARCO_VAR = config.env_str("HW_ARCO_VAR", "temperature").strip()
+LEVEL = config.env_int("HW_LEVEL", 850)
+CADENCE = config.env_int("HW_CADENCE", 6)
+TAG = config.env_str("HW_TAG", "t850").strip()
+STATS = [s for s in config.env_list("HW_STATS", ["min", "max", "val"])]
+DAY_BATCH = config.env_int("HW_DAY_BATCH", 10)
+OUT_DIR = Path(config.env_str("HW_OUT_DIR", config.ERA5_HEATWAVE_DAILY))
 
 if 24 % CADENCE != 0:
     raise SystemExit(f"HW_CADENCE must divide 24 (got {CADENCE})")
@@ -64,7 +63,7 @@ PART_PATH = OUT_PATH.with_suffix(".nc.part")
 def day_index() -> pd.DatetimeIndex:
     # HW_END_DATE caps a partial/current year at the last day with real ERA5 data
     # (ARCO's time axis is pre-declared into the future but NaN beyond the front).
-    end = os.environ.get("HW_END_DATE", "").strip() or f"{YEAR}-12-31"
+    end = (config.env_str("HW_END_DATE", "") or "").strip() or f"{YEAR}-12-31"
     return pd.date_range(f"{YEAR}-01-01", end, freq="1D")
 
 
@@ -107,7 +106,7 @@ def main() -> None:
     tmax_front = pd.Timestamp(ds.time.values[-1])
 
     days = day_index()
-    limit = int(os.environ.get("HW_DAY_LIMIT", "0"))     # smoke cap
+    limit = config.env_int("HW_DAY_LIMIT", 0)            # smoke cap
     if limit > 0:
         days = days[:limit]
     nd = len(days)

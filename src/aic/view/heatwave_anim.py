@@ -38,6 +38,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 from PIL import Image
 
+from aic import config
 from aic.regions import REGIONS, region_mask, region_extent, wrap180
 from aic.view.plotting import draw_coastlines
 # shared analysis core (no duplication of regrid / thresholds / spell detection)
@@ -49,43 +50,39 @@ try:
 except ImportError:                                  # standalone run (work9)
     from gif_utils import shared_palette, quantize, save_gif
 
-DATA = os.environ.get(
-    "HW_DATA_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave")
-CLIM_DIR = Path(os.environ.get(
-    "HW_CLIM_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_clim"))
-GIF_DIR = Path(os.environ.get(
-    "HW_GIF_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/heatwave_gifs"))
-WINDOW = int(os.environ.get("HW_WINDOW", "5"))       # best-performing window
-REGION = os.environ.get("HW_SPEC_REGION", "europe").strip().lower()
-YEAR = int(os.environ.get("HW_YEAR", "2023"))
+DATA = config.env_str("HW_DATA_DIR", config.ERA5_HEATWAVE)
+CLIM_DIR = Path(config.env_str("HW_CLIM_DIR", config.HEATWAVE_CLIM))
+GIF_DIR = Path(config.env_str("HW_GIF_DIR", config.HEATWAVE_GIFS))
+WINDOW = config.env_int("HW_WINDOW", 5)              # best-performing window
+REGION = config.env_str("HW_SPEC_REGION", "europe").strip().lower()
+YEAR = config.env_int("HW_YEAR", 2023)
 # HW_CS_DEF: drive the affected-region SET (which cells, which days) from a named
 # heat-wave definition (e.g. "cordex") instead of this module's own T850 detection.
 # The animation still colours by the T850 anomaly -- but relative to THAT definition's
 # reference period (cordex: 1971-2000; others: 1991-2020), read from the 2.8deg
 # daily-stats caches (t850 00-UTC value).
-CS_DEF = os.environ.get("HW_CS_DEF", "").strip()
-DAILY_DIR = os.environ.get(
-    "HW_DAILY_DIR", "/pfs/work9/workspace/scratch/ka_dm9435-ai-climate/era5_heatwave_daily")
+CS_DEF = config.env_str("HW_CS_DEF", "").strip()
+DAILY_DIR = config.env_str("HW_DAILY_DIR", config.ERA5_HEATWAVE_DAILY)
 REF_LABEL = "1991-2020"          # anomaly reference period (set per definition in main)
-MIN_DUR = int(os.environ.get("HW_MIN_DURATION", "3"))
-Q = float(os.environ.get("HW_Q", "0.95"))
-REGRID_BATCH = int(os.environ.get("HW_REGRID_BATCH", "300"))
-ZLIM = float(os.environ.get("HW_ZLIM", "4.0"))       # colour scale +/- sigma
+MIN_DUR = config.env_int("HW_MIN_DURATION", 3)
+Q = config.env_float("HW_Q", 0.95)
+REGRID_BATCH = config.env_int("HW_REGRID_BATCH", 300)
+ZLIM = config.env_float("HW_ZLIM", 4.0)              # colour scale +/- sigma
 # only render days where at least this AREA fraction of the region is in a heat
 # wave, so scattered single-cell days drop out and real episodes stand out.
-COVER_FRAC = float(os.environ.get("HW_COVER_FRAC", "0.10"))
+COVER_FRAC = config.env_float("HW_COVER_FRAC", 0.10)
 # temporally disconnected heat waves become SEPARATE gifs; qualifying days whose
 # gap (in days) exceeds this start a new episode (2 -> tolerate a single-day dip).
-EPISODE_GAP = int(os.environ.get("HW_EPISODE_GAP", "2"))
+EPISODE_GAP = config.env_int("HW_EPISODE_GAP", 2)
 # only keep heat waves (>=3-day spells) that reach this climatological percentile
 # somewhere -- "major" events. The whole spell containing such a day is kept, and a
 # single cell is enough (no area-coverage requirement). Set HW_MAJOR_Q to disable
 # with 0 (then any >=3-day spell counts).
-MAJOR_Q = float(os.environ.get("HW_MAJOR_Q", "0.99"))
+MAJOR_Q = config.env_float("HW_MAJOR_Q", 0.99)
 # a day is a MAJOR-EVENT day only if the major percentile is reached over at least
 # this AREA fraction of the region (widespread extreme, not a single cell); those
 # days define the episodes -> genuine major heat waves stand out.
-MAJOR_COVER = float(os.environ.get("HW_MAJOR_COVER", "0.05"))
+MAJOR_COVER = config.env_float("HW_MAJOR_COVER", 0.05)
 
 
 def _year(f):
