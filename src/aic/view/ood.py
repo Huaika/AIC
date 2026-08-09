@@ -54,7 +54,8 @@ def skill_year(sources, var, levels, region):
     for lev in C.render_levels(levels):
         lines, n_ref = [], None
         for s in sources:
-            agg = C.aggregate(s.drift_per_init(var, short, levels, [region]))
+            agg = C.aggregate(s.drift_per_init(var, short, levels, [region]),
+                              ci_metrics=("bias",))
             a = agg[(agg["region"] == region) & (agg["level"] == lev)] \
                 .sort_values("lead_hours")
             if a.empty:

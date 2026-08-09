@@ -154,7 +154,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
         per = src.drift_per_init(var, meta["short"], [lev], [gp],
                                  files=files, cache=False)
         raw.append((src.model, per))
-        agg = C.aggregate(per)
+        agg = C.aggregate(per, ci_metrics=("bias",))
         a = agg[(agg["region"] == gp.key) & (agg["level"] == lev)].sort_values("lead_hours")
         if not a.empty:
             curves.append((src, a))
@@ -327,7 +327,7 @@ def _aggregate_curves(pool, model_sources, var, lev):
         allper = pd.concat(pers, ignore_index=True)
         allper["region"] = "all"
         curves.append((src.color, src.pretty,
-                       C.aggregate(allper).sort_values("lead_hours")))
+                       C.aggregate(allper, ci_metrics=("bias",)).sort_values("lead_hours")))
     return curves
 
 
@@ -343,8 +343,11 @@ def shared_ylims(pools_sources):
                 mn, mx = [], []
                 for pool, srcs in pools_sources:
                     for _, _, agg in _aggregate_curves(pool, srcs, var, lev):
-                        mn.append(float(agg[metric].min()))
-                        mx.append(float(agg[metric].max()))
+                        # span the CI band too (if present) so it isn't clipped
+                        lo_c = agg[f"{metric}_lo"] if f"{metric}_lo" in agg else agg[metric]
+                        hi_c = agg[f"{metric}_hi"] if f"{metric}_hi" in agg else agg[metric]
+                        mn.append(float(lo_c.min()))
+                        mx.append(float(hi_c.max()))
                 if not mn:
                     continue
                 lo, hi = min(mn), max(mx)

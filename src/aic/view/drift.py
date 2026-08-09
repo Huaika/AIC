@@ -41,7 +41,7 @@ def plot_variable(sources, var, levels, regions, periods):
             d = per[s.run]
             sub = d if period == 0 else d[d["_m"] == period]
             if not sub.empty:
-                aggs[s.run] = C.aggregate(sub)
+                aggs[s.run] = C.aggregate(sub, ci_metrics=("bias",))
         if not aggs:
             print(f"  [skip] no init-days in {C.period_dir_name(period)}")
             continue

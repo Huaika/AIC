@@ -97,11 +97,23 @@ def draw_rollout_bundle(ax, roll, color, *, linestyle="-", lw=0.6, alpha=0.5,
 def draw_skill_metric(ax, curves, metric, *, zero_line=False, lw=1.9):
     """Draw one skill metric (``"rmse"`` or ``"bias"``) vs lead day. ``curves`` is a
     list of ``(color, label, dataframe)`` where each frame has ``lead_day`` and the
-    ``metric`` column (as produced by ``eval_common.aggregate``)."""
+    ``metric`` column (as produced by ``eval_common.aggregate``). If the frame also
+    carries ``<metric>_lo``/``<metric>_hi`` (bootstrap CI), a matching shaded band is
+    drawn."""
     if zero_line:
         ax.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
+    banded = False
     for color, label, df in curves:
+        lo, hi = f"{metric}_lo", f"{metric}_hi"
+        if lo in df.columns and hi in df.columns:
+            ax.fill_between(df["lead_day"], df[lo], df[hi], color=color,
+                            alpha=0.18, lw=0)
+            banded = True
         ax.plot(df["lead_day"], df[metric], color=color, lw=lw, label=label)
+    if banded:
+        pct = int(round(config.env_float("AIC_BOOT_CI", 0.95) * 100))
+        ax.plot([], [], color="0.5", lw=6, alpha=0.25,
+                label=f"{pct}% CI (block bootstrap)")
     ax.set_xlabel("lead time (days)")
     ax.grid(True, alpha=0.3)
 

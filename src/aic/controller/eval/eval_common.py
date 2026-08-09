@@ -307,16 +307,66 @@ def _part_path(var: str, t0: int, t1: int) -> Path:
 # --------------------------------------------------------------------------- #
 # small helpers (unchanged, run-independent)
 # --------------------------------------------------------------------------- #
-def aggregate(df):
+# bootstrap settings for the skill-metric confidence bands (env-tunable)
+BOOT_N = config.env_int("AIC_BOOT_N", 1000)          # resamples
+BOOT_BLOCK = config.env_int("AIC_BOOT_BLOCK", 5)     # moving-block length (init-days)
+BOOT_CI = config.env_float("AIC_BOOT_CI", 0.95)      # confidence level
+
+
+def _bootstrap_ci(df, metric):
+    """Moving-block bootstrap CI for the mean ``metric`` vs lead, per (region, level).
+
+    Resamples INIT-DAYS in blocks of ``BOOT_BLOCK`` consecutive days (so the temporal
+    autocorrelation of daily forecasts is respected, not assumed away) ``BOOT_N`` times
+    and takes the ``BOOT_CI`` percentile envelope of the resampled mean curve. For rmse
+    the per-resample statistic is ``sqrt(mean(mse))``; for bias it is ``mean(bias)``.
+    Returns ``{(region, level, lead_hours): (lo, hi)}``. Deterministic (seeded)."""
+    import numpy as _np
+    rng = _np.random.default_rng(0)
+    src = "mse" if metric == "rmse" else metric
+    a = (1.0 - BOOT_CI) / 2.0
+    out = {}
+    for (reg, lev), g in df.groupby(["region", "level"]):
+        piv = g.pivot_table(index="init_date", columns="lead_hours", values=src,
+                            aggfunc="mean").sort_index()
+        M = piv.values                                   # (n_init, n_lead)
+        n, leads = M.shape[0], piv.columns.values
+        if n == 0:
+            continue
+        nblk = -(-n // BOOT_BLOCK)                        # ceil
+        boot = _np.empty((BOOT_N, M.shape[1]))
+        for b in range(BOOT_N):
+            starts = rng.integers(0, n, size=nblk)
+            idx = _np.concatenate([_np.arange(s, s + BOOT_BLOCK) % n
+                                   for s in starts])[:n]
+            mean = _np.nanmean(M[idx], axis=0)
+            boot[b] = _np.sqrt(mean) if metric == "rmse" else mean
+        lo = _np.nanpercentile(boot, 100 * a, axis=0)
+        hi = _np.nanpercentile(boot, 100 * (1 - a), axis=0)
+        for j, h in enumerate(leads):
+            out[(reg, lev, int(h))] = (float(lo[j]), float(hi[j]))
+    return out
+
+
+def aggregate(df, ci_metrics=()):
     """Reduce per-init drift rows to mean skill vs lead: group by (region, level,
     lead_hours) and average the squared error and bias over init-days, then derive
     RMSE and lead-day. Pure data reduction shared by the skill views (spaghetti /
-    drift / OOD / case study) and their aggregate figures."""
+    drift / OOD / case study) and their aggregate figures.
+
+    ``ci_metrics`` (e.g. ``("bias",)``) adds ``<metric>_lo``/``<metric>_hi`` columns
+    from a moving-block bootstrap over init-days -- the confidence band the plots
+    shade. Off by default so RMSE-only aggregations pay nothing."""
     agg = (df.groupby(["region", "level", "lead_hours"], as_index=False)
              .agg(mse=("mse", "mean"), bias=("bias", "mean"),
                   n_init=("init_date", "nunique")))
     agg["rmse"] = np.sqrt(agg["mse"])
     agg["lead_day"] = agg["lead_hours"] / 24.0
+    for m in ci_metrics:
+        ci = _bootstrap_ci(df, m)
+        keys = list(zip(agg["region"], agg["level"], agg["lead_hours"]))
+        agg[f"{m}_lo"] = [ci.get((r, l, int(h)), (float("nan"),) * 2)[0] for r, l, h in keys]
+        agg[f"{m}_hi"] = [ci.get((r, l, int(h)), (float("nan"),) * 2)[1] for r, l, h in keys]
     return agg
 
 

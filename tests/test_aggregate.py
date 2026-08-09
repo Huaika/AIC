@@ -28,6 +28,28 @@ def test_aggregate_reduces_over_inits():
     np.testing.assert_allclose(row["lead_day"], 1.0)
 
 
+def test_aggregate_bias_ci_brackets_mean_and_is_deterministic():
+    rng = np.random.default_rng(1)
+    rows = []
+    for i in range(30):
+        d = pd.Timestamp("2023-06-01") + pd.Timedelta(days=i)
+        for lead, mu in [(24, 0.5), (120, -1.0), (240, 2.0)]:
+            rows.append(dict(region="all", level=850, lead_hours=lead,
+                             mse=mu ** 2 + 1, bias=mu + rng.normal(0, 1), init_date=d))
+    df = pd.DataFrame(rows)
+    a = aggregate(df, ci_metrics=("bias",)).sort_values("lead_hours").reset_index(drop=True)
+    assert {"bias_lo", "bias_hi"} <= set(a.columns)
+    assert "rmse_lo" not in a.columns              # only requested metric gets a band
+    assert (a["bias_lo"] <= a["bias"]).all() and (a["bias"] <= a["bias_hi"]).all()
+    b = aggregate(df, ci_metrics=("bias",)).sort_values("lead_hours").reset_index(drop=True)
+    np.testing.assert_allclose(a[["bias_lo", "bias_hi"]], b[["bias_lo", "bias_hi"]])  # seeded
+
+
+def test_aggregate_no_ci_by_default():
+    a = aggregate(_rows())
+    assert "bias_lo" not in a.columns and "bias_hi" not in a.columns
+
+
 def test_aggregate_groups_are_independent():
     df = _rows()
     df2 = df.copy()
