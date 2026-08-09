@@ -11,6 +11,9 @@ plotters stay thin and consistent (model colours come from ``sources.MODEL_COLOR
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -20,6 +23,30 @@ import matplotlib.dates as mdates
 from aic.config import COAST_ZARR
 from aic.regions import to_lon180
 from aic.style import INK, GRID, MUTED  # re-exported for the view modules' back-compat
+
+# default output file type for every figure; override per call (save_fig(fmts=...))
+# or globally via AIC_FIG_FMT.
+DEFAULT_FIG_FMT = os.environ.get("AIC_FIG_FMT", "pdf")
+
+
+def save_fig(fig, path, *, fmts=None, dpi=150, close=True):
+    """Write ``fig`` to ``path`` and close it (unless ``close=False``). The ONE place
+    figures are saved, so the file type is chosen consistently: format precedence is
+    ``fmts`` (a list, to emit several types at once) > ``path``'s own suffix > the
+    package default (``DEFAULT_FIG_FMT`` / ``AIC_FIG_FMT``). ``bbox_inches='tight'``
+    always; ``dpi`` applies to raster formats (ignored for pdf). Returns the written
+    paths."""
+    path = Path(path)
+    if not fmts:
+        fmts = [path.suffix[1:]] if path.suffix else [DEFAULT_FIG_FMT]
+    written = []
+    for fmt in fmts:
+        p = path.with_suffix(f".{fmt.lstrip('.')}")
+        fig.savefig(p, dpi=dpi, bbox_inches="tight")
+        written.append(p)
+    if close:
+        plt.close(fig)
+    return written
 
 # land-sea mask backdrop (grid-independent; the same NextGEMS constant-fields mask
 # is reused for every run and cached on first use)

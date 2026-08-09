@@ -33,6 +33,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+from aic import config
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import gridpoints as GP
 from aic.controller.eval import sources as S
@@ -129,8 +130,8 @@ def spaghetti_episode(sources, defn, year, ep, var, lev):
         ax.spines[s].set_visible(False)
     fig.tight_layout()
     out = fig_dir(defn, year, ep) / f"spaghetti_{meta['short']}_L{lev:04d}.pdf"
-    fig.savefig(out, bbox_inches="tight"); plt.close(fig)
-    print(f"  wrote {out.name}")
+    written = P.save_fig(fig, out)
+    print(f"  wrote {', '.join(p.name for p in written)}")
 
 
 # --------------------------------------------------------------------------- #
@@ -175,8 +176,8 @@ def skill_episode(sources, defn, year, ep, var, lev):
         P.despine(ax)
         fig.tight_layout()
         out = fig_dir(defn, year, ep) / f"{metric}-vs-lead_{meta['short']}_L{lev:04d}.pdf"
-        fig.savefig(out, bbox_inches="tight"); plt.close(fig)
-        print(f"  wrote {out.name}")
+        written = P.save_fig(fig, out)
+        print(f"  wrote {', '.join(p.name for p in written)}")
     return raw
 
 
@@ -253,8 +254,8 @@ def driftmap_episode(sources, defn, year, ep, var, lev):
                  f"{defn.name} > {D.PTAG})", y=1.03, fontsize=12.5)
     fig.tight_layout()
     out = fig_dir(defn, year, ep) / f"drift-map_{meta['short']}_L{lev:04d}.png"
-    fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
-    print(f"  wrote {out.name}")
+    written = P.save_fig(fig, out)
+    print(f"  wrote {', '.join(p.name for p in written)}")
 
 
 # --------------------------------------------------------------------------- #
@@ -281,7 +282,7 @@ def year_overview(defn, year, active_da, eps, region="europe"):
     d = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / str(year)
     d.mkdir(parents=True, exist_ok=True)
     out = d / f"_overview_coverage_{year}.pdf"
-    fig.tight_layout(); fig.savefig(out, bbox_inches="tight"); plt.close(fig)
+    fig.tight_layout(); P.save_fig(fig, out)
     print(f"[overview] wrote {out}")
 
 
@@ -316,7 +317,47 @@ def run_year(sources, defn, year, pool=None, window=HM.DEFAULT_WINDOW, region="e
     return len(eps)
 
 
-def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label):
+def _aggregate_curves(pool, model_sources, var, lev):
+    """[(color, pretty, aggregated sorted df)] for the models present in ``pool``,
+    pooling every heat wave in the pool together (region -> 'all')."""
+    curves = []
+    for src in model_sources:
+        pers = pool.get((src.model, var, lev), [])
+        if not pers:
+            continue
+        allper = pd.concat(pers, ignore_index=True)
+        allper["region"] = "all"
+        curves.append((src.color, src.pretty,
+                       C.aggregate(allper).sort_values("lead_hours")))
+    return curves
+
+
+def shared_ylims(pools_sources):
+    """Per (var, level, metric) y-axis range spanning EVERY (pool, model) curve, so the
+    per-year _aggregate plots (and the all-years one) share one scale and the years are
+    directly comparable. ``pools_sources`` is a list of (pool, model_sources). Bias
+    ranges always include 0 (the zero line is drawn); a 5% pad is added."""
+    lims = {}
+    for var in C.selected_variables():
+        for lev in CS_LEVELS.get(var, [850]):
+            for metric in ("rmse", "bias"):
+                mn, mx = [], []
+                for pool, srcs in pools_sources:
+                    for _, _, agg in _aggregate_curves(pool, srcs, var, lev):
+                        mn.append(float(agg[metric].min()))
+                        mx.append(float(agg[metric].max()))
+                if not mn:
+                    continue
+                lo, hi = min(mn), max(mx)
+                if metric == "bias":
+                    lo, hi = min(lo, 0.0), max(hi, 0.0)
+                pad = 0.05 * (hi - lo) if hi > lo else (abs(hi) or 1.0) * 0.05
+                lims[(var, lev, metric)] = (lo - pad, hi + pad)
+    return lims
+
+
+def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label,
+                  ylims=None, fmts=None):
     """Cross-episode comparison: pool the per-init drift over a SET of heat waves and
     plot the mean RMSE and mean bias vs lead per model -- the models' average skill
     during those heat waves. Only RMSE + bias (no regional maps or spaghetti).
@@ -330,21 +371,15 @@ def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label):
         meta = C.VARIABLES[var]
         short, units, label = meta["short"], meta["units"], meta["label"]
         for lev in CS_LEVELS.get(var, [850]):
-            curves = []
-            for src in model_sources:
-                pers = pool.get((src.model, var, lev), [])
-                if not pers:
-                    continue
-                allper = pd.concat(pers, ignore_index=True)
-                allper["region"] = "all"           # pool every heat wave together
-                agg = C.aggregate(allper).sort_values("lead_hours")
-                curves.append((src.color, src.pretty, agg))
+            curves = _aggregate_curves(pool, model_sources, var, lev)
             if not curves:
                 continue
             for metric, ylab, zero in [("rmse", f"RMSE [{units}]", False),
                                        ("bias", f"mean bias [{units}]", True)]:
                 fig, ax = plt.subplots(figsize=(6.8, 4.4))
                 P.draw_skill_metric(ax, curves, metric, zero_line=zero)
+                if ylims and (var, lev, metric) in ylims:
+                    ax.set_ylim(*ylims[(var, lev, metric)])   # shared scale across years
                 ax.set_title(f"{label}@{lev} hPa — mean {'RMSE' if metric=='rmse' else 'bias'} "
                              f"over {scope_label} ({n_events} events, > {D.PTAG})",
                              fontsize=10.5, color=P.INK, loc="left")
@@ -354,8 +389,8 @@ def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label):
                 P.despine(ax)
                 fig.tight_layout()
                 out = outdir / f"{metric}-vs-lead_{short}_L{lev:04d}.pdf"
-                fig.savefig(out, bbox_inches="tight"); plt.close(fig)
-                print(f"[aggregate] wrote {out.relative_to(C.FIG_ROOT)}", flush=True)
+                for p in P.save_fig(fig, out, fmts=fmts):
+                    print(f"[aggregate] wrote {p.relative_to(C.FIG_ROOT)}", flush=True)
 
 
 def main():
@@ -366,6 +401,7 @@ def main():
     models = os.environ.get("CS_MODELS", "neuralgcm,graphcast").replace(",", " ").split()
     pool = defaultdict(list)             # every episode of every year (all-years agg)
     rep, n_events = {}, 0
+    year_runs = []                       # (year, ypool, srcs, n_year), in order
     for year in years:
         srcs = []
         for m in models:
@@ -382,11 +418,26 @@ def main():
         n_events += n_year
         for k, v in ypool.items():        # roll the year into the all-years pool
             pool[k].extend(v)
+        year_runs.append((year, ypool, srcs, n_year))
+
+    # one shared y-scale per (var, level, metric) across all years + the all-years
+    # pool, so the per-year _aggregate plots are directly comparable between years.
+    all_srcs = [rep[m] for m in models if m in rep]
+    pools_sources = [(yp, s) for _, yp, s, _ in year_runs]
+    if all_srcs:
+        pools_sources.append((pool, all_srcs))
+    ylims = shared_ylims(pools_sources)
+    # file type(s) for the aggregate figures (default pdf); e.g. CS_AGG_FMTS="pdf png"
+    fmts = config.env_list("CS_AGG_FMTS") or None
+
+    for year, ypool, srcs, n_year in year_runs:
         run_aggregate(ypool, defn, srcs, n_year, subdir=f"{year}/_aggregate",
-                      scope_label=f"the {n_year} {year} {defn.name} heat waves")
-    if rep:
-        run_aggregate(pool, defn, [rep[m] for m in models if m in rep], n_events,
-                      subdir="_aggregate", scope_label=f"all {defn.name} heat waves")
+                      scope_label=f"the {n_year} {year} {defn.name} heat waves",
+                      ylims=ylims, fmts=fmts)
+    if all_srcs:
+        run_aggregate(pool, defn, all_srcs, n_events,
+                      subdir="_aggregate", scope_label=f"all {defn.name} heat waves",
+                      ylims=ylims, fmts=fmts)
     print(f"done -> {C.FIG_ROOT}/case_study/{defn.name}_{D.PTAG}/ ({n_events} events)")
 
 
