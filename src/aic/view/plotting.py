@@ -125,6 +125,12 @@ def skill_ylabel(metric, var_label, level, units):
     return f"Weighted {str(var_label).capitalize()} {stat} at {level} hPa [{units}]"
 
 
+def spaghetti_ylabel(var_label, level, units, area="global"):
+    """Y-axis label for a spaghetti plot, e.g. 'Global Mean Temperature at 850 hPa [K]'
+    (area='global' -> 'Global'; otherwise the region name)."""
+    return f"{str(area).capitalize()} Mean {str(var_label).capitalize()} at {level} hPa [{units}]"
+
+
 def skill_facets(panels, metric, *, ylabel, zero_line=False, ylim=None,
                  per_panel=(5.0, 4.4)):
     """One figure with a column per (title, curves) panel, sharing the y-axis so the

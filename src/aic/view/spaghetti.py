@@ -82,7 +82,7 @@ def plot_variable(sources, var, levels, regions, periods):
                             label=f"{s.pretty} 10-day rollout (daily mean)")
                 ax.set_title(f"{area.capitalize()}-mean {label} at {lev} hPa "
                              f"— {ref_src.ref_label}")
-                ax.set_ylabel(f"{label} @{lev}hPa {area} mean [{units}]")
+                ax.set_ylabel(P.spaghetti_ylabel(label, lev, units, area))
                 ax.set_xlabel("Valid time")
                 P.month_axis(ax)
                 ax.margins(x=0.01); ax.grid(alpha=0.25)
