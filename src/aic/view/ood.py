@@ -76,7 +76,7 @@ def skill_year(sources, var, levels, region):
             out = _figdir(var, kind) / fig_naming.figure_name(
                 S.model_token(sources), sources[0].dataset, region, var, lev, year,
                 "entire-year", kind, ext="pdf")
-            fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+            P.save_fig(fig, out)
             print(f"  wrote {out.relative_to(OOD_ROOT)}")
 
 
@@ -130,7 +130,7 @@ def spaghetti_multiyear(sources, var, levels, region):
         out = _figdir(var, "spaghetti") / fig_naming.figure_name(
             S.model_token(sources), sources[0].dataset, region, var, lev,
             "-".join(str(y) for y in years), "multiyear", "spaghetti", ext="pdf")
-        fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+        P.save_fig(fig, out)
         print(f"  wrote {out.relative_to(OOD_ROOT)}")
 
 

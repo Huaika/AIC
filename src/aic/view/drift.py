@@ -82,7 +82,7 @@ def plot_variable(sources, var, levels, regions, periods):
                     out = figdir / fig_naming.figure_name(
                         S.model_token(sources), sources[0].dataset, reg, var, lev,
                         sources[0].year, fig_naming.months_token(period), kind, ext="pdf")
-                    fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+                    P.save_fig(fig, out)
         print(f"  saved {C.period_dir_name(period)} x {len(regions)} region(s)")
 
 

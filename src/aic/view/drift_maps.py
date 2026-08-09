@@ -81,7 +81,7 @@ def plot_period_region(fields, sources, var, short, units, label, fcmap,
         out = figdir / fig_naming.figure_name(
             S.model_token(sources), ref_src.dataset, reg, var, lev, ref_src.year,
             fig_naming.months_token(period), "drift_maps")
-        fig.savefig(out, dpi=150, bbox_inches="tight"); plt.close(fig)
+        P.save_fig(fig, out)
 
 
 def plot_variable(sources, var, levels, regions, periods):
