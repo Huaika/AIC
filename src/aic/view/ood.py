@@ -148,8 +148,6 @@ def spaghetti_multiyear(sources, var, levels, region):
                         label=S.MODEL_PRETTY.get(m, m))
                  for m in dict.fromkeys(s.model for s in sources)])
         ax.legend(handles=mh, loc="upper left", fontsize=8, framealpha=0.9)
-        ax.set_title(f"{area.capitalize()}-mean {label} at {lev} hPa — "
-                     f"out-of-distribution rollouts ({', '.join(str(y) for y in years)})")
         ax.set_ylabel(P.spaghetti_ylabel(label, lev, units, area))
         ax.set_xlabel("Day of year")
         P.month_axis(ax); ax.margins(x=0.01); ax.grid(alpha=0.25)

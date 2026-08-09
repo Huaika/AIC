@@ -80,8 +80,6 @@ def plot_variable(sources, var, levels, regions, periods):
                     P.draw_rollout_bundle(ax, roll_lev, s.color, lw=0.5, alpha=0.5)
                     ax.plot([], [], color=s.color, lw=1.4, alpha=0.9,
                             label=f"{s.pretty} 10-day rollout (daily mean)")
-                ax.set_title(f"{area.capitalize()}-mean {label} at {lev} hPa "
-                             f"— {ref_src.ref_label}")
                 ax.set_ylabel(P.spaghetti_ylabel(label, lev, units, area))
                 ax.set_xlabel("Valid time")
                 P.month_axis(ax)
