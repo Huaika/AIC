@@ -1,8 +1,8 @@
 #!/bin/bash
-# Heat-wave case study: NeuralGCM rollouts over Europe heat-wave episodes,
+# Heatwave case study: NeuralGCM rollouts over Europe heatwave episodes,
 # mixture definition at the 99th percentile (T850 min & max > p99), 2023 & 2026.
 # Renders per-episode spaghetti + RMSE-vs-lead (Lagrangian) and a day-10 drift map
-# (Eulerian), using only the grid cells in each episode's heat-wave footprint.
+# (Eulerian), using only the grid cells in each episode's heatwave footprint.
 #SBATCH --job-name=hw_casestudy
 #SBATCH --partition=cpu
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=8 --mem=48gb --time=01:00:00

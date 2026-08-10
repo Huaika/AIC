@@ -1,5 +1,5 @@
 #!/bin/bash
-# (A) Re-plot the 2026 late-June/July heat-wave episode (ep03) with NeuralGCM +
+# (A) Re-plot the 2026 late-June/July heatwave episode (ep03) with NeuralGCM +
 #     GraphCast on the same plots (split RMSE/bias, side-by-side drift maps).
 # (B) Out-of-distribution multi-year spaghetti: NeuralGCM + GraphCast full-year
 #     rollouts for 1955, 2023 and 2049 overlaid on one day-of-year axis.

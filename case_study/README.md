@@ -1,4 +1,4 @@
-# Heat-wave case study — NeuralGCM over European heat-wave episodes
+# Heatwave case study — NeuralGCM over European heatwave episodes
 
 Evaluates NeuralGCM 10-day rollouts **only over the grid cells classified as a heat
 wave**, for Europe in **2023** and **2026**, using the **mixture** definition at the
@@ -8,8 +8,8 @@ spells).
 
 ## What it produces
 
-Heat-wave activity is split into temporally connected **episodes** (runs of days
-where ≥2 % of Europe, cos-lat weighted, is in a heat wave, merged across ≤2-day
+Heatwave activity is split into temporally connected **episodes** (runs of days
+where ≥2 % of Europe, cos-lat weighted, is in a heatwave, merged across ≤2-day
 gaps). Each episode has a spatial **footprint** = the union of all cells active on
 any day of the episode. For every episode, for T₈₅₀ and Z₅₀₀:
 
@@ -19,13 +19,13 @@ any day of the episode. For every episode, for T₈₅₀ and Z₅₀₀:
 | `rmse-vs-lead_*` | **Lagrangian** | footprint | rollouts initialised in [start−10 d, end] |
 | `drift-map_*` | **Eulerian** | footprint (cells outside left uncoloured) | day-10 valid window |
 
-Plus a per-year `_overview_coverage_<year>.pdf` (Europe heat-wave coverage timeline
+Plus a per-year `_overview_coverage_<year>.pdf` (Europe heatwave coverage timeline
 with the episodes shaded).
 
 - **Eulerian** (drift maps): the whole footprint is analysed over the time frame;
-  cells never in the heat wave are left out of the analysis and not coloured.
+  cells never in the heatwave are left out of the analysis and not coloured.
 - **Lagrangian** (spaghetti, RMSE-over-rollout): follows the afflicted footprint over
-  its heat-wave lifetime plus the roll-out window before and a brief window after.
+  its heatwave lifetime plus the roll-out window before and a brief window after.
 
 ## Running
 
@@ -50,10 +50,10 @@ Figures are written to `outputs/figures/case_study/mixture_p99/<year>/<episode>/
 
 ## Notes
 
-- NeuralGCM rollouts, the ERA5 truth caches and the heat-wave masks are all on the
+- NeuralGCM rollouts, the ERA5 truth caches and the heatwave masks are all on the
   identical 128×64 / 2.8° grid, so the footprint mask combines with the rollouts by
   coordinates — no regridding.
-- **2026** is a partial year: ERA5/heat-wave data end 2026-07-24 and NeuralGCM 2026
+- **2026** is a partial year: ERA5/heatwave data end 2026-07-24 and NeuralGCM 2026
   rollouts are initialised only through 2026-06-30, so the long June–July 2026
   episode is covered by rollouts only through its early-July portion.
 
