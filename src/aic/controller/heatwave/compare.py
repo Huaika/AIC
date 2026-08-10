@@ -2,8 +2,8 @@
 """Compare the three heatwave DEFINITIONS (Copernicus / Copernicus Adjusted /
 EURO-CORDEX) on the model grid, ACROSS a sweep of +/-window sizes, for a target year.
 
-Colour encodes the definition (red=Copernicus, blue=Copernicus Adjusted,
-green=EURO-CORDEX); the SHADE encodes the window size -- darker = smaller window,
+Colour encodes the definition (green=Copernicus, violet=Copernicus Adjusted,
+orange=EURO-CORDEX); the SHADE encodes the window size -- darker = smaller window,
 lighter = larger.
 
 Two families of figures (each overlays all definitions x windows):
@@ -43,7 +43,10 @@ REF = range(1991, 2021)
 # legend names for the three compared definitions (the source name, after the "~")
 DEF_LABELS = {"ecmwf": "Copernicus", "mixture": "Copernicus Adjusted",
               "cordex": "EURO-CORDEX"}
+# output file type(s) for the comparison figures (default pdf); e.g. HW_FMTS="pdf png"
+FMTS = config.env_list("HW_FMTS") or None
 from aic.style import INK, GRID  # shared palette (single source of truth)
+from aic.view import plotting as P
 
 
 def shades(base_hex, n, fmax=0.66):
@@ -144,8 +147,8 @@ def main():
                   bbox_to_anchor=(1.0, 0.82), fontsize=8, frameon=False)
         fig.tight_layout()
         out = FIGDIR / f"heatwave{YEAR}_defcompare_{metric}_{D.PTAG}_wsweep_2p8deg{rtag}.pdf"
-        fig.savefig(out, bbox_inches="tight"); plt.close(fig)
-        print(f"[compare] wrote {out.name}", flush=True)
+        for p in P.save_fig(fig, out, fmts=FMTS):
+            print(f"[compare] wrote {p.name}", flush=True)
 
     # ---- 2. timing over the year (area in heatwave per day) ----
     tp, tl = month_ticks(YEAR)
@@ -167,8 +170,8 @@ def main():
               fontsize=8, title_fontsize=8, ncol=len(WINDOWS), frameon=False)
     fig.tight_layout()
     out = FIGDIR / f"heatwave{YEAR}_defcompare_timing_{D.PTAG}_wsweep_2p8deg{rtag}.pdf"
-    fig.savefig(out, bbox_inches="tight"); plt.close(fig)
-    print(f"[compare] wrote {out.name}", flush=True)
+    for p in P.save_fig(fig, out, fmts=FMTS):
+        print(f"[compare] wrote {p.name}", flush=True)
     print(f"[compare] DONE -> {FIGDIR}", flush=True)
 
 

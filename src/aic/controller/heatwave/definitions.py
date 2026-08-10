@@ -79,10 +79,10 @@ CORDEX = Definition(
 DEFINITIONS = [OURS, MIXTURE, ECMWF, CORDEX]
 BY_NAME = {d.name: d for d in DEFINITIONS}
 
-# consistent colours for the definitions on overlay plots. Copernicus (ecmwf)=red,
-# Copernicus Adjusted (mixture)=blue, EURO-CORDEX (cordex)=green.
-COLORS = {"ours": "#9467bd", "mixture": "#1f77b4", "ecmwf": "#d62728",
-          "cordex": "#2ca02c"}
+# consistent colours for the definitions on overlay plots (highly distinguishable).
+# Copernicus (ecmwf)=green, Copernicus Adjusted (mixture)=violet, EURO-CORDEX (cordex)=orange.
+COLORS = {"ours": "#1f77b4", "mixture": "#9467bd", "ecmwf": "#2ca02c",
+          "cordex": "#ff7f0e"}
 
 
 def selected(names=None):
