@@ -461,9 +461,9 @@ def run_error_maps(year_runs, defn, region="europe", fmts=None):
                         for L in EM.LEADS}
             if fields:
                 EM.render_error_maps_scoped(
-                    fields, sorted(fields), units, scopes=scopes, extent=extent,
-                    coast=P.draw_coastlines, out_dir=outdir, stem=f"{short}_L{lev:04d}",
-                    fmts=fmts, cmap=cmap)
+                    fields, sorted(fields), units, var_label=meta["label"], scopes=scopes,
+                    extent=extent, coast=P.draw_coastlines, out_dir=outdir,
+                    stem=f"{short}_L{lev:04d}", fmts=fmts, cmap=cmap)
 
 
 def main():

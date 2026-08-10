@@ -30,8 +30,8 @@ def _order(models):
             + [m for m in models if m not in MODEL_ORDER])
 
 
-def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmts=None,
-                      label=None, cmap="RdBu_r"):
+def render_error_maps(fields, years, units, *, var_label="", extent, coast, out_dir,
+                      stem, fmts=None, label=None, cmap="RdBu_r"):
     """Write a per-year error-map grid for each year + one combined grid across years.
 
     ``fields[year][model][lead]`` is a 2-D error DataArray (already masked to the
@@ -42,7 +42,7 @@ def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmt
     the corner of each grid. Leave it None for the default (unlabelled) variant -- the
     OOD grids and the case-study 'yearly' grids -- which keep their clean filenames."""
     out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
-    cbar = f"Error [{units}]"
+    cbar = f"Mean {var_label.title()} Error [{units}]" if var_label else f"Error [{units}]"
     tag = f"_{label}" if label else ""                   # filename suffix for the variant
     row_labels = [LEAD_LABELS[L] for L in LEADS]
     allc = [fields[y][m].get(L) for y in years for m in fields[y] for L in LEADS]
@@ -78,8 +78,8 @@ def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmt
         print(f"[errmap] wrote {p.name}", flush=True)
 
 
-def render_error_maps_scoped(fields, years, units, *, scopes, extent, coast, out_dir,
-                             stem, fmts=None, cmap="RdBu_r"):
+def render_error_maps_scoped(fields, years, units, *, var_label="", scopes, extent, coast,
+                             out_dir, stem, fmts=None, cmap="RdBu_r"):
     """Error-map grid with the two scopes (whole year / heatwave) side by side.
 
     ``fields[year][model][scope_key][lead]`` is a 2-D error DataArray (or None). Columns
@@ -89,7 +89,7 @@ def render_error_maps_scoped(fields, years, units, *, scopes, extent, coast, out
     one combined figure across years (year over model over scope headers), all sharing a
     single symmetric colour scale."""
     out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
-    cbar = f"Error [{units}]"
+    cbar = f"Mean {var_label.title()} Error [{units}]" if var_label else f"Error [{units}]"
     row_labels = [LEAD_LABELS[L] for L in LEADS]
     scope_keys = [k for k, _ in scopes]
     scope_title = dict(scopes)

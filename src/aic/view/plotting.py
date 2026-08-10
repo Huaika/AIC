@@ -251,7 +251,7 @@ def error_map_grid(cells, *, row_labels, col_labels, extent, cbar_label,
                 ax.set_ylabel(row_labels[r], fontsize=11)
     if m is not None:
         fig.colorbar(m, ax=axes.ravel().tolist(), location="right", shrink=0.9,
-                     pad=0.02, label=cbar_label)
+                     pad=0.008, label=cbar_label)
     fig.canvas.draw()                         # realise positions for the group headers
     axtop = max(axes[0][c].get_position().y1 for c in range(nc))
     for i, level in enumerate(levels):        # innermost (i=0) lowest, outer higher
