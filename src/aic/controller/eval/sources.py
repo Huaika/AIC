@@ -106,6 +106,7 @@ class Source:
     outdir: Path
     color: str
     kind: str = "forecast"
+    exclude_inits: tuple = ()          # init-day tokens to drop (bad rollouts)
     _levels: list | None = field(default=None, repr=False)
     _grid: tuple | None = field(default=None, repr=False)
     _mgrid: tuple | None = field(default=None, repr=False)
@@ -121,7 +122,8 @@ class Source:
             year=int(cfg["year"]), ref_label=cfg["ref_label"],
             pred_dir=Path(cfg["pred_dir"]),
             outdir=C.RESULTS_ROOT / f"results_eval_{run}",
-            color=color if color is not None else model_color(_model_of(run)))
+            color=color if color is not None else model_color(_model_of(run)),
+            exclude_inits=tuple(cfg.get("exclude_inits", ())))
 
     @property
     def pretty(self) -> str:
@@ -132,6 +134,15 @@ class Source:
         fs = sorted(self.pred_dir.glob(f"pred_{self.year}_*.nc"))
         if not fs:
             raise SystemExit(f"[source {self.run}] no pred files in {self.pred_dir}")
+        if self.exclude_inits:                     # drop flagged bad-init rollouts
+            bad = set(self.exclude_inits)
+            keep = [f for f in fs
+                    if f.stem.replace(f"pred_{self.year}_", "") not in bad]
+            dropped = len(fs) - len(keep)
+            if dropped:
+                print(f"[source {self.run}] excluding {dropped} init-day(s): "
+                      f"{sorted(bad)}", flush=True)
+            fs = keep
         return fs
 
     def prediction_levels(self) -> list[int]:

@@ -55,6 +55,9 @@ RUNS = {
         truth_kind="nextgems",
         truth_src=(f"{WS}/ka_je2428-nextgems_2049/"
                    "3D_nextgems_2049_6hourly_0.25deg_lat-lon.nc"),
+        # three NeuralGCM rollouts with a corrupt initial state (visible as spikes in
+        # the Z500/T850 spaghetti); dropped from all 2049 analysis. Raw pred files kept.
+        exclude_inits=("2049-02-12", "2049-05-24", "2049-06-20"),
     ),
     "era5_1955": dict(
         year=1955,
