@@ -201,23 +201,31 @@ def draw_coastlines(ax, lw=0.4, color="k", alpha=0.7):
 
 def error_map_grid(cells, *, row_labels, col_labels, extent, cbar_label,
                    group_labels=None, coast=None, cmap="RdBu_r", vlim=None,
-                   drift_pct=99):
+                   drift_pct=99, spec_label=None):
     """Grid of forecast-error maps sharing ONE diverging colour scale.
 
     ``cells[r][c]`` is a 2-D error DataArray (or None). Columns are models
     (``col_labels``, drawn as headers on top), rows are lead times (``row_labels`` like
     '+1 day', drawn on the left). ``group_labels`` = list of ``(text, c0, c1)`` draws a
     second header row spanning columns c0..c1 inclusive (e.g. the year over its two
-    model columns). No titles, no lat/lon axis labels; one shared 'Error [units]'
-    colourbar (symmetric +/- vlim) on the right. Returns the figure."""
+    model columns). ``spec_label`` (e.g. 'heatwave') writes a small tag in the top-left
+    corner to distinguish variants; leave it None for the default (unlabelled) grid.
+    No titles, no lat/lon axis labels; one shared 'Error [units]' colourbar (symmetric
+    +/- vlim) on the right. Returns the figure."""
     nr, nc = len(row_labels), len(col_labels)
     if vlim is None:
         vals = [c for row in cells for c in row if c is not None]
         vlim = max((float(np.nanpercentile(np.abs(c.values), drift_pct)) for c in vals),
                    default=1.0) or 1.0
-    fig, axes = plt.subplots(nr, nc, figsize=(2.5 * nc + 1.2, 2.5 * nr + 0.6),
-                             squeeze=False, sharex=True, sharey=True)
+    # size each panel box to the extent's geographic aspect (width:height in degrees),
+    # so panels are NOT forced square -- a wide extent (world, ~2:1) keeps its shape and
+    # is not skewed. The map then fills its box (auto aspect), matching the drift maps.
     w, e, s, n = extent
+    ph = 2.5                                          # panel height (inches)
+    pw = ph * (e - w) / (n - s)                       # width preserves the map proportions
+    fig, axes = plt.subplots(nr, nc, figsize=(pw * nc + 1.2, ph * nr + 0.6),
+                             squeeze=False, sharex=True, sharey=True,
+                             gridspec_kw={"wspace": 0.02, "hspace": 0.02})
     m = None
     for r in range(nr):
         for c in range(nc):
@@ -244,4 +252,7 @@ def error_map_grid(cells, *, row_labels, col_labels, extent, cbar_label,
         top = max(axes[0][c].get_position().y1 for c in range(nc))
         fig.text(x, top + 0.04, str(text), ha="center", va="bottom",
                  fontsize=13, fontweight="bold")
+    if spec_label:                            # variant tag (top-left, clear of headers)
+        fig.text(0.01, 0.99, str(spec_label), ha="left", va="top",
+                 fontsize=10, fontstyle="italic", color=INK)
     return fig

@@ -413,8 +413,17 @@ def run_aggregate_byyear(year_runs, defn, ylims=None, fmts=None):
 
 def run_error_maps(year_runs, defn, region="europe", fmts=None):
     """Error-map grids (rows = lead {+1,+5,+10 d}, columns = model) per year + one
-    combined figure, coloured only on the union of that year's heatwave footprints
-    (like the per-episode drift maps, but for the whole year). -> _error_maps/."""
+    combined figure. -> _error_maps/. Two variants per (var, level):
+
+      yearly   (default, no label): drift over the rollout length for each model over
+               the ENTIRE year -- every init of the year, the whole region, unmasked.
+      heatwave (labelled 'heatwave'): the same grid but restricted to the year's
+               heatwave episodes -- episode-window inits, coloured only on the union of
+               that year's heatwave footprints.
+
+    The OOD analysis already shows the yearly view, so this yearly variant is what makes
+    the case study comparable to it; the heatwave variant is the footprint-focused view.
+    Only the non-default (heatwave) variant carries a filename/corner label."""
     from aic.view import error_maps as EM
     extent = region_extent(region)
     outdir = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / "_error_maps"
@@ -422,29 +431,41 @@ def run_error_maps(year_runs, defn, region="europe", fmts=None):
         meta = C.VARIABLES[var]
         units, short = meta["units"], meta["short"]
         for lev in CS_LEVELS.get(var, [850]):
-            fields = {}
+            yearly, heat = {}, {}
             for year, ypool, srcs, n_year in year_runs:
                 eps = HM.episodes(HM.active_mask_da(defn, year, HM.DEFAULT_WINDOW, region),
                                   region)
-                if not eps:
-                    continue
                 for src in srcs:
+                    # yearly: every init of the year, whole region, unmasked
+                    yfiles = list(src.pred_files())
+                    if yfiles:
+                        yef = src.error_fields_by_lead(var, lev, yfiles, EM.LEADS)
+                        yearly.setdefault(year, {})[src.model] = {
+                            L: yef[L][0] for L in EM.LEADS}
+                    # heatwave: episode-window inits, masked to the footprint union
+                    if not eps:
+                        continue
                     union = None
                     for ep in eps:                        # union of the year's footprints
                         m = footprint_points(src, ep, year).mask
                         union = m if union is None else (union | m)
-                    files = sorted({f for ep in eps
-                                    for f in episode_files(src, ep, BEFORE, 0)})
-                    if not files:
+                    hfiles = sorted({f for ep in eps
+                                     for f in episode_files(src, ep, BEFORE, 0)})
+                    if not hfiles:
                         continue
-                    ef = src.error_fields_by_lead(var, lev, list(files), EM.LEADS)
-                    fields.setdefault(year, {})[src.model] = {
-                        L: (ef[L][0].where(union) if ef[L][0] is not None else None)
+                    hef = src.error_fields_by_lead(var, lev, list(hfiles), EM.LEADS)
+                    heat.setdefault(year, {})[src.model] = {
+                        L: (hef[L][0].where(union) if hef[L][0] is not None else None)
                         for L in EM.LEADS}
-            if fields:
-                EM.render_error_maps(fields, sorted(fields), units, extent=extent,
+            stem = f"{short}_L{lev:04d}"
+            if yearly:
+                EM.render_error_maps(yearly, sorted(yearly), units, extent=extent,
                                      coast=P.draw_coastlines, out_dir=outdir,
-                                     stem=f"{short}_L{lev:04d}", fmts=fmts)
+                                     stem=stem, fmts=fmts)              # default, no label
+            if heat:
+                EM.render_error_maps(heat, sorted(heat), units, extent=extent,
+                                     coast=P.draw_coastlines, out_dir=outdir,
+                                     stem=stem, fmts=fmts, label="heatwave")
 
 
 def main():

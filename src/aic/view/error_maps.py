@@ -30,14 +30,19 @@ def _order(models):
             + [m for m in models if m not in MODEL_ORDER])
 
 
-def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmts=None):
+def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmts=None,
+                      label=None):
     """Write a per-year error-map grid for each year + one combined grid across years.
 
     ``fields[year][model][lead]`` is a 2-D error DataArray (already masked to the
     domain) or None. All figures share one symmetric colour scale (99th-pct of |error|
-    over every panel), so years/leads/models are directly comparable."""
+    over every panel), so years/leads/models are directly comparable. ``label`` (e.g.
+    'heatwave') tags the variant: it is appended to every filename and drawn small in
+    the corner of each grid. Leave it None for the default (unlabelled) variant -- the
+    OOD grids and the case-study 'yearly' grids -- which keep their clean filenames."""
     out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     cbar = f"Error [{units}]"
+    tag = f"_{label}" if label else ""                   # filename suffix for the variant
     row_labels = [LEAD_LABELS[L] for L in LEADS]
     allc = [fields[y][m].get(L) for y in years for m in fields[y] for L in LEADS]
     allc = [c for c in allc if c is not None]
@@ -50,8 +55,8 @@ def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmt
         fig = P.error_map_grid(
             cells, row_labels=row_labels,
             col_labels=[S.MODEL_PRETTY.get(m, m) for m in models],
-            extent=extent, cbar_label=cbar, coast=coast, vlim=vlim)
-        for p in P.save_fig(fig, out_dir / f"{stem}_{y}.pdf", fmts=fmts):
+            extent=extent, cbar_label=cbar, coast=coast, vlim=vlim, spec_label=label)
+        for p in P.save_fig(fig, out_dir / f"{stem}{tag}_{y}.pdf", fmts=fmts):
             print(f"[errmap] wrote {p.name}", flush=True)
 
     cols, group, ci = [], [], 0                          # combined: year x model
@@ -64,7 +69,8 @@ def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmt
     fig = P.error_map_grid(
         cells, row_labels=row_labels,
         col_labels=[S.MODEL_PRETTY.get(m, m) for (_, m) in cols],
-        group_labels=group, extent=extent, cbar_label=cbar, coast=coast, vlim=vlim)
+        group_labels=group, extent=extent, cbar_label=cbar, coast=coast, vlim=vlim,
+        spec_label=label)
     yrs = "-".join(str(y) for y in years)
-    for p in P.save_fig(fig, out_dir / f"{stem}_{yrs}_combined.pdf", fmts=fmts):
+    for p in P.save_fig(fig, out_dir / f"{stem}{tag}_{yrs}_combined.pdf", fmts=fmts):
         print(f"[errmap] wrote {p.name}", flush=True)
