@@ -21,19 +21,19 @@ def flip_season(season):
 
 
 def hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window,
-             ref_months=None, tgt_months=None, lat=None):
+             ref_months=None, tgt_months=None, lat=None, seasonal_windowed=False):
     """Boolean hot mask (T, Y, X) for the target year under `defn`: for each daily
     statistic in defn.stats, the target value exceeds the reference threshold; the
     day is hot where ALL of them do (logical AND).
 
     Windowed definitions (``defn.kind == "doy"``) compare against a per-calendar-day
-    +/-``window`` percentile. The EURO-CORDEX definition (``kind == "season"``)
-    compares against a single seasonal per-cell percentile AND only flags days that
-    fall inside the season -- hemisphere-aware: the northern hemisphere uses
-    ``defn.season`` (May-Sep), the southern hemisphere the flipped season (Nov-Mar),
-    both for the threshold's reference pool and for the in-season limit. Requires
-    ``ref_months``, ``tgt_months`` (calendar month per reference / target day) and
-    ``lat`` (the Y-axis latitudes)."""
+    +/-``window`` percentile. The EURO-CORDEX definition (``kind == "season"``) only
+    flags days inside the season -- hemisphere-aware: the northern hemisphere uses
+    ``defn.season`` (May-Sep), the southern the flipped season (Nov-Mar). Its threshold
+    is, by default, a SINGLE seasonal per-cell percentile (the strict definition). Pass
+    ``seasonal_windowed=True`` to use a day-of-year +/-``window`` percentile instead
+    (still season-restricted) -- a windowed variant used by the definition-comparison
+    sweep. Requires ``ref_months``, ``tgt_months`` and ``lat`` for seasonal defs."""
     hot = None
     for s in defn.stats:
         if defn.kind == "season":
@@ -41,15 +41,20 @@ def hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window,
                 raise ValueError("seasonal definition needs ref_months, tgt_months, lat")
             nh_s = defn.season
             sh_s = flip_season(nh_s)
-            thr_nh = season_percentile(ref_stats[s], ref_months, nh_s, defn.pct)
-            thr_sh = season_percentile(ref_stats[s], ref_months, sh_s, defn.pct)
             nh = np.asarray(lat) >= 0                          # (Y,)
-            thr = np.where(nh[:, None], thr_nh, thr_sh)        # (Y, X)
             inseason = np.where(                               # (T, Y, 1) in-season
                 nh[None, :, None],
                 season_mask(tgt_months, nh_s)[:, None, None],
                 season_mask(tgt_months, sh_s)[:, None, None])
-            m = (tgt_stats[s] > thr[None, :, :]) & inseason
+            if seasonal_windowed:                             # day-of-year +/-window
+                thr = doy_percentile(ref_stats[s], ref_doy, window, defn.pct)
+                exceed = tgt_stats[s] > thr[tgt_doy - 1]
+            else:                                             # single seasonal pctile
+                thr_nh = season_percentile(ref_stats[s], ref_months, nh_s, defn.pct)
+                thr_sh = season_percentile(ref_stats[s], ref_months, sh_s, defn.pct)
+                thr = np.where(nh[:, None], thr_nh, thr_sh)   # (Y, X)
+                exceed = tgt_stats[s] > thr[None, :, :]
+            m = exceed & inseason
         else:
             thr = doy_percentile(ref_stats[s], ref_doy, window, defn.pct)
             m = tgt_stats[s] > thr[tgt_doy - 1]

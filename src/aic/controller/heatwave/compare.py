@@ -93,23 +93,21 @@ def main():
     area_flat = area2d.reshape(-1)
     tgt_doy = d0[4]
 
-    # windowed definitions sweep the +/-day window; seasonal ones (EURO-CORDEX) have
-    # a single window-independent threshold -> one curve.
-    windows_for = lambda d: [0] if d.kind == "season" else WINDOWS
-
+    # every definition sweeps the +/-day window; EURO-CORDEX (seasonal) uses a
+    # day-of-year windowed percentile restricted to its season (seasonal_windowed).
     # detect for every (definition, window)
     res = {}
     for d in defs:
         (ref_stats, ref_doy, ref_months, tgt_stats, td, tgt_months,
          _, _) = data[(d.tag, d.ref_years)]
-        for w in windows_for(d):
+        for w in WINDOWS:
             hot = DET.hot_mask(d, ref_stats, ref_doy, tgt_stats, td, w,
-                               ref_months=ref_months, tgt_months=tgt_months, lat=latc)
+                               ref_months=ref_months, tgt_months=tgt_months, lat=latc,
+                               seasonal_windowed=True)
             dur, ar = DET.spell_events(hot, area_flat)
             daily = (DET.active_mask(hot) * area2d[None]).sum(axis=(1, 2)) / 1e6
             res[(d.name, w)] = (dur, ar, daily)
-            wlab = "seasonal" if d.kind == "season" else f"+/-{w}d"
-            print(f"[compare] {d.name} {wlab}: {dur.size} events, "
+            print(f"[compare] {d.name} +/-{w}d: {dur.size} events, "
                   f"{ar.sum()/1e6:.1f} x10^6 km^2", flush=True)
 
     rtag = "" if REGION == "world" else f"_{REGION}"
@@ -126,14 +124,12 @@ def main():
                            ("area", "Area affected (10$^6$ km$^2$)")]:
         fig, ax = plt.subplots(figsize=(7.8, 4.9))
         for d in defs:
-            seasonal = d.kind == "season"
-            cols = None if seasonal else shades(D.COLORS[d.name], len(WINDOWS))
-            for i, w in enumerate(windows_for(d)):
+            cols = shades(D.COLORS[d.name], len(WINDOWS))
+            for i, w in enumerate(WINDOWS):
                 dur, ar, _ = res[(d.name, w)]
                 y = (np.array([(dur == b).sum() for b in bins]) if metric == "count"
                      else np.array([ar[dur == b].sum() / 1e6 for b in bins]))
-                ax.plot(bins, y, color=(D.COLORS[d.name] if seasonal else cols[i]),
-                        lw=2.2 if seasonal else 1.5)
+                ax.plot(bins, y, color=cols[i], lw=1.5)
         ax.set_yscale("log")
         ax.set_xlabel("Heatwave duration (consecutive days)", color=INK)
         ax.set_ylabel(ylabel, color=INK)
@@ -154,12 +150,10 @@ def main():
     tp, tl = month_ticks(YEAR)
     fig, ax = plt.subplots(figsize=(9.2, 4.6))
     for d in defs:
-        seasonal = d.kind == "season"
-        cols = None if seasonal else shades(D.COLORS[d.name], len(WINDOWS))
-        for i, w in enumerate(windows_for(d)):
+        cols = shades(D.COLORS[d.name], len(WINDOWS))
+        for i, w in enumerate(WINDOWS):
             _, _, daily = res[(d.name, w)]
-            ax.plot(tgt_doy, daily, color=(D.COLORS[d.name] if seasonal else cols[i]),
-                    lw=1.7 if seasonal else 1.1)
+            ax.plot(tgt_doy, daily, color=cols[i], lw=1.1)
     ax.set_xticks(tp); ax.set_xticklabels(tl)
     ax.set_xlim(1, tgt_doy.max())
     ax.set_xlabel("Month", color=INK)
