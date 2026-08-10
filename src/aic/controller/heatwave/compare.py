@@ -39,10 +39,9 @@ REGION = config.env_str("HW_SPEC_REGION", "world").strip().lower()
 YEAR = config.env_int("HW_YEAR", 2023)
 REGION_NAME = "the world" if REGION == "world" else REGION.replace("_", " ").title()
 REF = range(1991, 2021)
-# descriptive definition labels (variable + cadence), shared by all comparison plots
-DEF_LABELS = {"ours": "850hPa 00 UTC", "mixture": "850hPa 6-hourly",
-              "ecmwf": "2mT 6-hourly",
-              "cordex": "2mT max, May–Sep p99 (1971–2000)"}
+# legend names for the three compared definitions (the source name, after the "~")
+DEF_LABELS = {"ecmwf": "Copernicus", "mixture": "Copernicus Adjusted",
+              "cordex": "EURO-CORDEX"}
 from aic.style import INK, GRID  # shared palette (single source of truth)
 
 
@@ -76,7 +75,9 @@ def month_ticks(year):
 
 def main():
     FIGDIR.mkdir(parents=True, exist_ok=True)
-    defs = D.selected(config.env_str("HW_DEFS"))
+    # the three compared definitions: Copernicus (ecmwf), Copernicus Adjusted
+    # (mixture), EURO-CORDEX (cordex). Override via HW_DEFS.
+    defs = D.selected(config.env_str("HW_DEFS") or "ecmwf mixture cordex")
     # load ref+target once per (tag, reference-period); union the stats each key needs
     keys = {}
     for d in defs:
@@ -121,7 +122,7 @@ def main():
     # ---- 1. amount vs duration (count + area) ----
     dmax = max((dur.max() if dur.size else 3) for dur, _, _ in res.values())
     bins = np.arange(3, dmax + 1)
-    for metric, ylabel in [("count", "Number of heat waves (grid cells)"),
+    for metric, ylabel in [("count", "Number of heatwaves (grid cells)"),
                            ("area", "Area affected (10$^6$ km$^2$)")]:
         fig, ax = plt.subplots(figsize=(7.8, 4.9))
         for d in defs:
@@ -134,10 +135,7 @@ def main():
                 ax.plot(bins, y, color=(D.COLORS[d.name] if seasonal else cols[i]),
                         lw=2.2 if seasonal else 1.5)
         ax.set_yscale("log")
-        ax.set_title(f"Length of heat wave classification in {REGION_NAME} in "
-                     f"{YEAR} by definitions (> {D.PTAG})",
-                     fontsize=12.5, color=INK, loc="left")
-        ax.set_xlabel("Heat-wave duration (consecutive days)", color=INK)
+        ax.set_xlabel("Heatwave duration (consecutive days)", color=INK)
         ax.set_ylabel(ylabel, color=INK)
         ax.grid(True, which="both", color=GRID, lw=0.6)
         for s in ("top", "right"): ax.spines[s].set_visible(False)
@@ -145,8 +143,8 @@ def main():
                          bbox_to_anchor=(1.0, 1.0), ncol=len(WINDOWS),
                          fontsize=8, title_fontsize=8, frameon=False)
         ax.add_artist(lwin)
-        ax.legend(handles=def_leg, title="definition", loc="upper right",
-                  bbox_to_anchor=(1.0, 0.80), fontsize=8, title_fontsize=8, frameon=False)
+        ax.legend(handles=def_leg, loc="upper right",
+                  bbox_to_anchor=(1.0, 0.82), fontsize=8, frameon=False)
         fig.tight_layout()
         out = FIGDIR / f"heatwave{YEAR}_defcompare_{metric}_{D.PTAG}_wsweep_2p8deg{rtag}.pdf"
         fig.savefig(out, bbox_inches="tight"); plt.close(fig)
@@ -164,14 +162,11 @@ def main():
                     lw=1.7 if seasonal else 1.1)
     ax.set_xticks(tp); ax.set_xticklabels(tl)
     ax.set_xlim(1, tgt_doy.max())
-    ax.set_title(f"Area classified as heat wave in {REGION_NAME} in {YEAR} "
-                 f"by definitions (> {D.PTAG})", fontsize=13, color=INK, loc="left")
     ax.set_xlabel("Month", color=INK)
-    ax.set_ylabel("Area in heat wave (10$^6$ km$^2$)", color=INK)
+    ax.set_ylabel("Area in heatwave (10$^6$ km$^2$)", color=INK)
     ax.grid(True, color=GRID, lw=0.6)
     for s in ("top", "right"): ax.spines[s].set_visible(False)
-    l1 = ax.legend(handles=def_leg, title="definition", loc="upper left",
-                   fontsize=8, title_fontsize=8, frameon=False)
+    l1 = ax.legend(handles=def_leg, loc="upper left", fontsize=8, frameon=False)
     ax.add_artist(l1)
     ax.legend(handles=win_leg, title="time window", loc="upper right",
               fontsize=8, title_fontsize=8, ncol=len(WINDOWS), frameon=False)
