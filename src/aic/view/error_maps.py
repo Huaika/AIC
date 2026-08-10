@@ -76,3 +76,67 @@ def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmt
     yrs = "-".join(str(y) for y in years)
     for p in P.save_fig(fig, out_dir / f"{stem}{tag}_{yrs}_combined.pdf", fmts=fmts):
         print(f"[errmap] wrote {p.name}", flush=True)
+
+
+def render_error_maps_scoped(fields, years, units, *, scopes, extent, coast, out_dir,
+                             stem, fmts=None, cmap="RdBu_r"):
+    """Error-map grid with the two scopes (whole year / heatwave) side by side.
+
+    ``fields[year][model][scope_key][lead]`` is a 2-D error DataArray (or None). Columns
+    nest year > model > scope, so each model shows its 'complete year' panel directly
+    beside its 'heatwave' panel; rows are the lead times. ``scopes`` is an ordered list
+    of ``(scope_key, column_title)``. One per-year figure (model over scope headers) and
+    one combined figure across years (year over model over scope headers), all sharing a
+    single symmetric colour scale."""
+    out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+    cbar = f"Error [{units}]"
+    row_labels = [LEAD_LABELS[L] for L in LEADS]
+    scope_keys = [k for k, _ in scopes]
+    scope_title = dict(scopes)
+    allc = [fields[y][m][sk].get(L)
+            for y in years for m in fields[y] for sk in fields[y][m] for L in LEADS]
+    allc = [c for c in allc if c is not None]
+    vlim = max((float(np.nanpercentile(np.abs(c.values), 99)) for c in allc),
+               default=1.0) or 1.0
+
+    def _layout(pairs):
+        """(cells, col_titles, model_groups, cols) for an ordered list of (year, model)."""
+        cols, model_groups, ci = [], [], 0
+        for y, m in pairs:
+            sks = [sk for sk in scope_keys if sk in fields[y][m]]
+            if not sks:
+                continue
+            model_groups.append((S.MODEL_PRETTY.get(m, m), ci, ci + len(sks) - 1))
+            cols += [(y, m, sk) for sk in sks]
+            ci += len(sks)
+        cells = [[fields[y][m][sk].get(L) for (y, m, sk) in cols] for L in LEADS]
+        col_titles = [scope_title[sk] for (_, _, sk) in cols]
+        return cells, col_titles, model_groups, cols
+
+    for y in years:                                     # per-year: model > scope
+        pairs = [(y, m) for m in _order(list(fields[y]))]
+        cells, col_titles, model_groups, cols = _layout(pairs)
+        if not cols:
+            continue
+        fig = P.error_map_grid(
+            cells, row_labels=row_labels, col_labels=col_titles, extent=extent,
+            cbar_label=cbar, coast=coast, vlim=vlim, cmap=cmap,
+            header_levels=[model_groups])
+        for p in P.save_fig(fig, out_dir / f"{stem}_{y}.pdf", fmts=fmts):
+            print(f"[errmap] wrote {p.name}", flush=True)
+
+    pairs = [(y, m) for y in years for m in _order(list(fields[y]))]  # combined
+    cells, col_titles, model_groups, cols = _layout(pairs)
+    year_groups = []                                    # year spans its model x scope cols
+    for y in years:
+        span = [i for i, (yy, _, _) in enumerate(cols) if yy == y]
+        if span:
+            year_groups.append((y, span[0], span[-1]))
+    if cols:
+        fig = P.error_map_grid(
+            cells, row_labels=row_labels, col_labels=col_titles, extent=extent,
+            cbar_label=cbar, coast=coast, vlim=vlim, cmap=cmap,
+            header_levels=[model_groups, year_groups])
+        yrs = "-".join(str(y) for y in years)
+        for p in P.save_fig(fig, out_dir / f"{stem}_{yrs}_combined.pdf", fmts=fmts):
+            print(f"[errmap] wrote {p.name}", flush=True)

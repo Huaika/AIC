@@ -412,37 +412,38 @@ def run_aggregate_byyear(year_runs, defn, ylims=None, fmts=None):
 
 
 def run_error_maps(year_runs, defn, region="europe", fmts=None):
-    """Error-map grids (rows = lead {+1,+5,+10 d}, columns = model) per year + one
-    combined figure. -> _error_maps/. Two variants per (var, level):
+    """Error-map grids (rows = lead {+1,+5,+10 d}) -> _error_maps/. Columns nest
+    year > model > scope, so each model's 'complete year' panel sits directly beside its
+    'heatwave' panel:
 
-      yearly   (default, no label): drift over the rollout length for each model over
-               the ENTIRE year -- every init of the year, the whole region, unmasked.
-      heatwave (labelled 'heatwave'): the same grid but restricted to the year's
-               heatwave episodes -- episode-window inits, coloured only on the union of
-               that year's heatwave footprints.
+      complete year : drift over the rollout length for each model over the ENTIRE
+                      year -- every init of the year, the whole region, unmasked.
+      heatwaves     : the same, restricted to the year's heatwave episodes --
+                      episode-window inits, coloured only on the union of that year's
+                      heatwave footprints.
 
-    The OOD analysis already shows the yearly view, so this yearly variant is what makes
-    the case study comparable to it; the heatwave variant is the footprint-focused view.
-    Only the non-default (heatwave) variant carries a filename/corner label."""
+    One per-year figure (model > scope) and one combined figure across years (year >
+    model > scope), sharing a single colour scale."""
     from aic.view import error_maps as EM
     extent = region_extent(region)
     outdir = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / "_error_maps"
+    scopes = [("year", "complete year"), ("heatwave", "heatwaves")]
     for var in C.selected_variables():
         meta = C.VARIABLES[var]
         units, short = meta["units"], meta["short"]
         cmap = meta.get("err_cmap", "RdBu_r")        # per-variable diverging error cmap
         for lev in CS_LEVELS.get(var, [850]):
-            yearly, heat = {}, {}
+            fields = {}                              # fields[year][model][scope][lead]
             for year, ypool, srcs, n_year in year_runs:
                 eps = HM.episodes(HM.active_mask_da(defn, year, HM.DEFAULT_WINDOW, region),
                                   region)
                 for src in srcs:
-                    # yearly: every init of the year, whole region, unmasked
+                    scoped = fields.setdefault(year, {}).setdefault(src.model, {})
+                    # complete year: every init of the year, whole region, unmasked
                     yfiles = list(src.pred_files())
                     if yfiles:
                         yef = src.error_fields_by_lead(var, lev, yfiles, EM.LEADS)
-                        yearly.setdefault(year, {})[src.model] = {
-                            L: yef[L][0] for L in EM.LEADS}
+                        scoped["year"] = {L: yef[L][0] for L in EM.LEADS}
                     # heatwave: episode-window inits, masked to the footprint union
                     if not eps:
                         continue
@@ -455,18 +456,14 @@ def run_error_maps(year_runs, defn, region="europe", fmts=None):
                     if not hfiles:
                         continue
                     hef = src.error_fields_by_lead(var, lev, list(hfiles), EM.LEADS)
-                    heat.setdefault(year, {})[src.model] = {
+                    scoped["heatwave"] = {
                         L: (hef[L][0].where(union) if hef[L][0] is not None else None)
                         for L in EM.LEADS}
-            stem = f"{short}_L{lev:04d}"
-            if yearly:
-                EM.render_error_maps(yearly, sorted(yearly), units, extent=extent,
-                                     coast=P.draw_coastlines, out_dir=outdir, stem=stem,
-                                     fmts=fmts, cmap=cmap)             # default, no label
-            if heat:
-                EM.render_error_maps(heat, sorted(heat), units, extent=extent,
-                                     coast=P.draw_coastlines, out_dir=outdir, stem=stem,
-                                     fmts=fmts, cmap=cmap, label="heatwave")
+            if fields:
+                EM.render_error_maps_scoped(
+                    fields, sorted(fields), units, scopes=scopes, extent=extent,
+                    coast=P.draw_coastlines, out_dir=outdir, stem=f"{short}_L{lev:04d}",
+                    fmts=fmts, cmap=cmap)
 
 
 def main():

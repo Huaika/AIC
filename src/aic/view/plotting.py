@@ -200,19 +200,23 @@ def draw_coastlines(ax, lw=0.4, color="k", alpha=0.7):
 
 
 def error_map_grid(cells, *, row_labels, col_labels, extent, cbar_label,
-                   group_labels=None, coast=None, cmap="RdBu_r", vlim=None,
-                   drift_pct=99, spec_label=None):
+                   group_labels=None, header_levels=None, coast=None, cmap="RdBu_r",
+                   vlim=None, drift_pct=99, spec_label=None):
     """Grid of forecast-error maps sharing ONE diverging colour scale.
 
-    ``cells[r][c]`` is a 2-D error DataArray (or None). Columns are models
-    (``col_labels``, drawn as headers on top), rows are lead times (``row_labels`` like
-    '+1 day', drawn on the left). ``group_labels`` = list of ``(text, c0, c1)`` draws a
-    second header row spanning columns c0..c1 inclusive (e.g. the year over its two
-    model columns). ``spec_label`` (e.g. 'heatwave') writes a small tag in the top-left
-    corner to distinguish variants; leave it None for the default (unlabelled) grid.
-    No titles, no lat/lon axis labels; one shared 'Error [units]' colourbar (symmetric
-    +/- vlim) on the right. Returns the figure."""
+    ``cells[r][c]`` is a 2-D error DataArray (or None). Columns carry ``col_labels`` as
+    per-column titles on top, rows are lead times (``row_labels`` like '+1 day', on the
+    left). Column groupings are drawn as extra header rows above the titles, innermost
+    first, via ``header_levels`` = list of levels, each a list of ``(text, c0, c1)``
+    spanning columns c0..c1 inclusive -- e.g. ``[model_groups, year_groups]`` draws the
+    model over its scope columns and the year over its model columns. ``group_labels``
+    (a single level) is still accepted as shorthand for ``header_levels=[group_labels]``.
+    ``spec_label`` writes a small tag in the top-left corner. No plot titles, no lat/lon
+    axis labels; one shared 'Error [units]' colourbar (symmetric +/- vlim) on the right.
+    Returns the figure."""
     nr, nc = len(row_labels), len(col_labels)
+    levels = header_levels if header_levels is not None else (
+        [group_labels] if group_labels else [])
     if vlim is None:
         vals = [c for row in cells for c in row if c is not None]
         vlim = max((float(np.nanpercentile(np.abs(c.values), drift_pct)) for c in vals),
@@ -226,6 +230,8 @@ def error_map_grid(cells, *, row_labels, col_labels, extent, cbar_label,
     fig, axes = plt.subplots(nr, nc, figsize=(pw * nc + 1.2, ph * nr + 0.6),
                              squeeze=False, sharex=True, sharey=True,
                              gridspec_kw={"wspace": 0.02, "hspace": 0.02})
+    if levels:                                        # leave headroom for the header rows
+        fig.subplots_adjust(top=1.0 - 0.05 - 0.055 * len(levels))
     m = None
     for r in range(nr):
         for c in range(nc):
@@ -240,18 +246,19 @@ def error_map_grid(cells, *, row_labels, col_labels, extent, cbar_label,
             ax.set_xlim(w, e); ax.set_ylim(s, n)
             ax.tick_params(labelbottom=False, labelleft=False, length=0)
             if r == 0:
-                ax.set_title(col_labels[c], fontsize=11)
+                ax.set_title(col_labels[c], fontsize=10)
             if c == 0:
                 ax.set_ylabel(row_labels[r], fontsize=11)
     if m is not None:
         fig.colorbar(m, ax=axes.ravel().tolist(), location="right", shrink=0.9,
                      pad=0.02, label=cbar_label)
     fig.canvas.draw()                         # realise positions for the group headers
-    for text, c0, c1 in (group_labels or []):
-        x = (axes[0][c0].get_position().x0 + axes[0][c1].get_position().x1) / 2
-        top = max(axes[0][c].get_position().y1 for c in range(nc))
-        fig.text(x, top + 0.04, str(text), ha="center", va="bottom",
-                 fontsize=13, fontweight="bold")
+    axtop = max(axes[0][c].get_position().y1 for c in range(nc))
+    for i, level in enumerate(levels):        # innermost (i=0) lowest, outer higher
+        for text, c0, c1 in level:
+            x = (axes[0][c0].get_position().x0 + axes[0][c1].get_position().x1) / 2
+            fig.text(x, axtop + 0.02 + i * 0.055, str(text), ha="center", va="bottom",
+                     fontsize=12 + i, fontweight="bold")
     if spec_label:                            # variant tag (top-left, clear of headers)
         fig.text(0.01, 0.99, str(spec_label), ha="left", va="top",
                  fontsize=10, fontstyle="italic", color=INK)
