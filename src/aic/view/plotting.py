@@ -197,3 +197,51 @@ def draw_coastlines(ax, lw=0.4, color="k", alpha=0.7):
         _COAST = (lsm.lon.values, lsm.lat.values, lsm.values)
     lon, lat, mask = _COAST
     ax.contour(lon, lat, mask, levels=[0.5], colors=color, linewidths=lw, alpha=alpha)
+
+
+def error_map_grid(cells, *, row_labels, col_labels, extent, cbar_label,
+                   group_labels=None, coast=None, cmap="RdBu_r", vlim=None,
+                   drift_pct=99):
+    """Grid of forecast-error maps sharing ONE diverging colour scale.
+
+    ``cells[r][c]`` is a 2-D error DataArray (or None). Columns are models
+    (``col_labels``, drawn as headers on top), rows are lead times (``row_labels`` like
+    '+1 day', drawn on the left). ``group_labels`` = list of ``(text, c0, c1)`` draws a
+    second header row spanning columns c0..c1 inclusive (e.g. the year over its two
+    model columns). No titles, no lat/lon axis labels; one shared 'Error [units]'
+    colourbar (symmetric +/- vlim) on the right. Returns the figure."""
+    nr, nc = len(row_labels), len(col_labels)
+    if vlim is None:
+        vals = [c for row in cells for c in row if c is not None]
+        vlim = max((float(np.nanpercentile(np.abs(c.values), drift_pct)) for c in vals),
+                   default=1.0) or 1.0
+    fig, axes = plt.subplots(nr, nc, figsize=(2.5 * nc + 1.2, 2.5 * nr + 0.6),
+                             squeeze=False, sharex=True, sharey=True)
+    w, e, s, n = extent
+    m = None
+    for r in range(nr):
+        for c in range(nc):
+            ax = axes[r][c]
+            cell = cells[r][c]
+            if cell is not None:
+                f2 = to_lon180(cell)
+                m = ax.pcolormesh(f2.longitude, f2.latitude, f2, cmap=cmap,
+                                  vmin=-vlim, vmax=vlim, shading="auto")
+                if coast is not None:
+                    coast(ax)
+            ax.set_xlim(w, e); ax.set_ylim(s, n)
+            ax.tick_params(labelbottom=False, labelleft=False, length=0)
+            if r == 0:
+                ax.set_title(col_labels[c], fontsize=11)
+            if c == 0:
+                ax.set_ylabel(row_labels[r], fontsize=11)
+    if m is not None:
+        fig.colorbar(m, ax=axes.ravel().tolist(), location="right", shrink=0.9,
+                     pad=0.02, label=cbar_label)
+    fig.canvas.draw()                         # realise positions for the group headers
+    for text, c0, c1 in (group_labels or []):
+        x = (axes[0][c0].get_position().x0 + axes[0][c1].get_position().x1) / 2
+        top = max(axes[0][c].get_position().y1 for c in range(nc))
+        fig.text(x, top + 0.04, str(text), ha="center", va="bottom",
+                 fontsize=13, fontweight="bold")
+    return fig

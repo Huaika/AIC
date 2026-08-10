@@ -411,6 +411,42 @@ def run_aggregate_byyear(year_runs, defn, ylims=None, fmts=None):
                     print(f"[by-year] wrote {p.relative_to(C.FIG_ROOT)}", flush=True)
 
 
+def run_error_maps(year_runs, defn, region="europe", fmts=None):
+    """Error-map grids (rows = lead {+1,+5,+10 d}, columns = model) per year + one
+    combined figure, coloured only on the union of that year's heat-wave footprints
+    (like the per-episode drift maps, but for the whole year). -> _error_maps/."""
+    from aic.view import error_maps as EM
+    extent = region_extent(region)
+    outdir = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / "_error_maps"
+    for var in C.selected_variables():
+        meta = C.VARIABLES[var]
+        units, short = meta["units"], meta["short"]
+        for lev in CS_LEVELS.get(var, [850]):
+            fields = {}
+            for year, ypool, srcs, n_year in year_runs:
+                eps = HM.episodes(HM.active_mask_da(defn, year, HM.DEFAULT_WINDOW, region),
+                                  region)
+                if not eps:
+                    continue
+                for src in srcs:
+                    union = None
+                    for ep in eps:                        # union of the year's footprints
+                        m = footprint_points(src, ep, year).mask
+                        union = m if union is None else (union | m)
+                    files = sorted({f for ep in eps
+                                    for f in episode_files(src, ep, BEFORE, 0)})
+                    if not files:
+                        continue
+                    ef = src.error_fields_by_lead(var, lev, list(files), EM.LEADS)
+                    fields.setdefault(year, {})[src.model] = {
+                        L: (ef[L][0].where(union) if ef[L][0] is not None else None)
+                        for L in EM.LEADS}
+            if fields:
+                EM.render_error_maps(fields, sorted(fields), units, extent=extent,
+                                     coast=P.draw_coastlines, out_dir=outdir,
+                                     stem=f"{short}_L{lev:04d}", fmts=fmts)
+
+
 def main():
     from collections import defaultdict
     defn = D.BY_NAME[config.env_str("HW_CS_DEF", "mixture")]
@@ -458,6 +494,7 @@ def main():
                       ylims=ylims, fmts=fmts)
     if year_runs:
         run_aggregate_byyear(year_runs, defn, ylims=ylims, fmts=fmts)
+        run_error_maps(year_runs, defn, fmts=fmts)
     print(f"done -> {C.FIG_ROOT}/case_study/{defn.name}_{D.PTAG}/ ({n_events} events)")
 
 

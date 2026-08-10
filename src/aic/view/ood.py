@@ -26,6 +26,7 @@ from matplotlib.lines import Line2D
 from aic import config
 from aic.controller.eval import eval_common as C
 from aic.controller.eval import sources as S
+from aic.view import error_maps as EM
 from aic.view import naming as fig_naming
 from aic.view import plotting as P
 from aic.view.spaghetti import build_ref
@@ -160,6 +161,23 @@ def spaghetti_multiyear(sources, var, levels, region):
             print(f"  wrote {p.relative_to(OOD_ROOT)}")
 
 
+def error_maps(sources, var, levels, region):
+    """Error-map grids (rows = lead {+1,+5,+10 d}, columns = model) per year + one
+    combined figure across years, over `region` (world for OOD)."""
+    from aic.regions import region_extent
+    meta = C.VARIABLES[var]
+    units = meta["units"]
+    extent = region_extent(region)
+    for lev in C.render_levels(levels):
+        fields = {}
+        for s in sources:
+            ef = s.error_fields_by_lead(var, lev, s.pred_files(), EM.LEADS)
+            fields.setdefault(s.year, {})[s.model] = {L: ef[L][0] for L in EM.LEADS}
+        EM.render_error_maps(fields, sorted(fields), units, extent=extent,
+                             coast=P.draw_coastlines, out_dir=_figdir(var, "error_maps"),
+                             stem=f"{meta['short']}_L{lev:04d}", fmts=OOD_FMTS)
+
+
 def main():
     sources = S.resolve_sources()
     if len(sources) < 2:
@@ -181,6 +199,8 @@ def main():
             skill_facets_years(aggs, var, levels, region)
             print(f"=== OOD spaghetti: {var} / {region} ===")
             spaghetti_multiyear(sources, var, levels, region)
+            print(f"=== OOD error maps: {var} / {region} ===")
+            error_maps(sources, var, levels, region)
     print(f"done -> {OOD_ROOT}/<variable>/{{drift_rmse,drift_bias,spaghetti}}/")
 
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -369,6 +370,35 @@ class Source:
             df.to_csv(csv, index=False)
             print(f"[{self.run}] wrote {csv}")
         return df
+
+    def error_fields_by_lead(self, var, lev, files, leads):
+        """Mean forecast-error field (pred - truth) at each target lead (hours) over
+        ``files``, on this source's 2.8deg grid. Returns ``{lead: (err2d|None, n)}``.
+        Truth is paired to each step's valid_time (nearest) and its coords reassigned to
+        the pred grid so the subtraction aligns (identity for NeuralGCM; GraphCast is
+        regridded first)."""
+        truth = self.truth_at_levels(var, [lev]).sel(level=lev)
+        acc = {int(L): None for L in leads}
+        n = {int(L): 0 for L in leads}
+        for f in files:
+            ds = self.open_pred(f)
+            fld = (self.regrid_field(ds[var].sel(level=lev))
+                   .transpose("time", "latitude", "longitude"))
+            lh = ds["lead_hours"].values
+            vt = ds["valid_time"].values
+            for L in list(acc):
+                where = np.where(lh == L)[0]
+                if not len(where):
+                    continue
+                i = int(where[0])
+                p = fld.isel(time=i)
+                t = (truth.sel(time=vt[i], method="nearest")
+                     .assign_coords(latitude=p.latitude, longitude=p.longitude))
+                e = p - t
+                acc[L] = e if acc[L] is None else acc[L] + e
+                n[L] += 1
+            ds.close()
+        return {L: (acc[L] / n[L] if n[L] else None, n[L]) for L in acc}
 
     def day10_fields(self, var, short, levels, period) -> xr.Dataset | None:
         """Day-10 clim / reference clim / drift fields for a period, cached NC.
