@@ -3,7 +3,7 @@
 
 Every diagnostic figure family -- spaghetti (``view/spaghetti``), drift skill
 (``view/drift``), drift maps (``view/drift_maps``), the out-of-distribution
-analysis (``view/ood``) and the heat-wave case study
+analysis (``view/ood``) and the heatwave case study
 (``controller/casestudy/plots``) -- shares a handful of drawing idioms: the thin
 per-init rollout "bundle", a map panel, a skill (RMSE/bias) curve, the day-of-year
 x-axis for overlaying different years, and month ticks. They live here ONCE so the

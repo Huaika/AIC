@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Shared regridding onto NeuralGCM's 2.8 deg model grid, used by every heat-wave
+"""Shared regridding onto NeuralGCM's 2.8 deg model grid, used by every heatwave
 analysis (the daily-stats definitions here, and the view animations). One place
 builds the conservative regridder + caches regridded fields, so no analysis re-pays
 the regrid and the whole project stays on the same grid.

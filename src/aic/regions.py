@@ -2,7 +2,7 @@
 """Single source of truth for the named lat/lon regions used across the project.
 
 ONE definition, imported by the eval plotters (spaghetti / drift / drift-maps via
-eval_common), the heat-wave analysis, and the ERA5 staging code -- so a region box
+eval_common), the heatwave analysis, and the ERA5 staging code -- so a region box
 is changed in exactly one place. Each region is
 (lat_south, lat_north, lon_west, lon_east) in the -180..180 longitude convention;
 'world' is the whole globe (the default). The continent boxes are approximate

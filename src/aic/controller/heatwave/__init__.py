@@ -1,4 +1,4 @@
-"""Heat-wave analysis (controller). Two data stagers, a shared analysis core, and
+"""Heatwave analysis (controller). Two data stagers, a shared analysis core, and
 the drivers:
 
   staging       : ERA5 T850 @00 UTC snapshots (the original 'ours' pipeline).

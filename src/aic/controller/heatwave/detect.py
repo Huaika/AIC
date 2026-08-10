@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-"""Definition-driven heat-wave detection on the model grid. ONE code path serves
+"""Definition-driven heatwave detection on the model grid. ONE code path serves
 all three definitions (definitions.py): a day is 'hot' where EVERY daily statistic
-the definition names exceeds its day-of-year percentile threshold; a heat wave is a
+the definition names exceeds its day-of-year percentile threshold; a heatwave is a
 run of >= MIN_DUR consecutive hot days at a cell."""
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def hot_mask(defn, ref_stats, ref_doy, tgt_stats, tgt_doy, window,
 
 def spell_events(hot, area_flat, min_dur=MIN_DUR):
     """Vectorised >=min_dur consecutive-hot-day runs per cell -> (durations, areas):
-    one entry per cell heat-wave event, with its cell area (km^2)."""
+    one entry per cell heatwave event, with its cell area (km^2)."""
     T = hot.shape[0]
     hct = hot.reshape(T, -1).T.astype("int8")
     h = np.pad(hct, ((0, 0), (1, 1)))
@@ -78,7 +78,7 @@ def spell_events(hot, area_flat, min_dur=MIN_DUR):
 
 def active_mask(hot, min_dur=MIN_DUR):
     """Boolean (T, Y, X): True where a cell is inside a >=min_dur consecutive-hot-day
-    spell on that day (for the day-of-year timing of heat-wave activity)."""
+    spell on that day (for the day-of-year timing of heatwave activity)."""
     T = hot.shape[0]
     hf = hot.reshape(T, -1)
     active = np.zeros_like(hf)

@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-"""Heat-wave DURATION SPECTRA for our T850-00 UTC definition, across window sizes
+"""Heatwave DURATION SPECTRA for our T850-00 UTC definition, across window sizes
 (+/-0..+/-7), on the NeuralGCM 2.8 deg grid.
 
 The regrid, day-of-year percentile threshold, cell area and spell detection all come
 from the shared controller/heatwave core (grid / climatology / detect) -- this module
 only reads the T850 00 UTC files, drives the window loop and draws the bar charts.
 
-  * count : x = duration (days), y = number of heat waves (grid-cell events).
+  * count : x = duration (days), y = number of heatwaves (grid-cell events).
   * area  : x = duration, y = total area affected (10^6 km^2).
 2 x 8 = 16 PDFs, axes shared across windows for direct comparability.
 """
@@ -58,7 +58,7 @@ def publication_bar(x, y, color, title, ylabel, xlim, ylim, path, note):
     fig, ax = plt.subplots(figsize=(7.2, 4.6))
     ax.bar(x, y, width=0.82, color=color, edgecolor="white", linewidth=0.4, zorder=3)
     ax.set_title(title, fontsize=12, color=INK, loc="left", pad=10)
-    ax.set_xlabel("Heat-wave duration (consecutive days)", fontsize=11, color=INK)
+    ax.set_xlabel("Heatwave duration (consecutive days)", fontsize=11, color=INK)
     ax.set_ylabel(ylabel, fontsize=11, color=INK)
     ax.set_xlim(*xlim); ax.set_ylim(*ylim)
     step = max(1, (int(xlim[1]) // 15))
@@ -106,7 +106,7 @@ def main():
         hot = tgt_vals > thr[tgt_doy - 1]
         dur, area = spell_events(hot, area_flat)
         per_w[w] = (dur, area)
-        print(f"[spec] window +/-{w}d: {dur.size} heat-wave events, "
+        print(f"[spec] window +/-{w}d: {dur.size} heatwave events, "
               f"{area.sum()/1e6:.2f} x10^6 km^2 total", flush=True)
 
     dmax = max((d.max() if d.size else MIN_DUR) for d, _ in per_w.values())
@@ -129,13 +129,13 @@ def main():
                 f"$\\pm${w}-day window, $\\geq${MIN_DUR}-day spells, 2.8$\\degree$ grid")
         publication_bar(
             bins, c, COUNT_COLOR,
-            f"{rlabel}2023 heat-wave duration spectrum — event count\n{base}",
-            "Number of heat waves (grid cells)", xlim, cyl,
+            f"{rlabel}2023 heatwave duration spectrum — event count\n{base}",
+            "Number of heatwaves (grid cells)", xlim, cyl,
             FIGDIR / f"heatwave{YEAR}_count-vs-duration_window-pm{w}d_{RES_TAG}{rsuf}.pdf",
-            note=f"$\\pm${w} d window\n{int(c.sum())} heat waves")
+            note=f"$\\pm${w} d window\n{int(c.sum())} heatwaves")
         publication_bar(
             bins, a, AREA_COLOR,
-            f"{rlabel}2023 heat-wave duration spectrum — area affected\n{base}",
+            f"{rlabel}2023 heatwave duration spectrum — area affected\n{base}",
             "Area affected (10$^6$ km$^2$)", xlim, ayl,
             FIGDIR / f"heatwave{YEAR}_area-vs-duration_window-pm{w}d_{RES_TAG}{rsuf}.pdf",
             note=f"$\\pm${w} d window\n{a.sum():.2f}$\\times$10$^6$ km$^2$")

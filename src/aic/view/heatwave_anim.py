@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""Animate detected heat waves on a regional map (GIF), coloured by the day's
+"""Animate detected heatwaves on a regional map (GIF), coloured by the day's
 standardized T850 anomaly, for the best-performing reference window (+/-5 days).
 
 Pipeline:
   1. Build (or load) a cached day-of-year CLIMATOLOGY on the 2.8 deg grid from
      1991-2020: per calendar day (pseudo-year, 1..366) and grid cell, the 95th-
-     percentile heat-wave THRESHOLD, the MEAN and the STD over a +/-window window.
+     percentile heatwave THRESHOLD, the MEAN and the STD over a +/-window window.
      Saved once to clim_w<window>_2p8deg.nc -> future animations skip the 30-yr
      regrid entirely (this is the expensive step).
   2. Regrid the target year (2023) to the 2.8 deg grid, crop to the region.
@@ -13,10 +13,10 @@ Pipeline:
      a cell is "affected" on days inside a >= 3-consecutive-hot-day spell.
   4. Keep only MAJOR-EVENT days: those where the major (99th) percentile is reached
      over >= HW_MAJOR_COVER of the region (widespread extreme, not a single cell) --
-     so genuine major heat waves stand out. Split those days into temporally
-     connected EPISODES -> one 1-second-per-frame GIF each (disconnected heat waves
+     so genuine major heatwaves stand out. Split those days into temporally
+     connected EPISODES -> one 1-second-per-frame GIF each (disconnected heatwaves
      become separate gifs). Every frame: the WHOLE anomaly field faint (30% opacity)
-     with the heat-wave (>=3-day spell) cells overdrawn at full opacity. All frames
+     with the heatwave (>=3-day spell) cells overdrawn at full opacity. All frames
      of all gifs share ONE colour palette, so the gradient/colouring is identical
      everywhere (no per-frame GIF-palette flicker).
 
@@ -57,7 +57,7 @@ WINDOW = config.env_int("HW_WINDOW", 5)              # best-performing window
 REGION = config.env_str("HW_SPEC_REGION", "europe").strip().lower()
 YEAR = config.env_int("HW_YEAR", 2023)
 # HW_CS_DEF: drive the affected-region SET (which cells, which days) from a named
-# heat-wave definition (e.g. "cordex") instead of this module's own T850 detection.
+# heatwave definition (e.g. "cordex") instead of this module's own T850 detection.
 # The animation still colours by the T850 anomaly -- but relative to THAT definition's
 # reference period (cordex: 1971-2000; others: 1991-2020), read from the 2.8deg
 # daily-stats caches (t850 00-UTC value).
@@ -71,17 +71,17 @@ ZLIM = config.env_float("HW_ZLIM", 4.0)              # colour scale +/- sigma
 # only render days where at least this AREA fraction of the region is in a heat
 # wave, so scattered single-cell days drop out and real episodes stand out.
 COVER_FRAC = config.env_float("HW_COVER_FRAC", 0.10)
-# temporally disconnected heat waves become SEPARATE gifs; qualifying days whose
+# temporally disconnected heatwaves become SEPARATE gifs; qualifying days whose
 # gap (in days) exceeds this start a new episode (2 -> tolerate a single-day dip).
 EPISODE_GAP = config.env_int("HW_EPISODE_GAP", 2)
-# only keep heat waves (>=3-day spells) that reach this climatological percentile
+# only keep heatwaves (>=3-day spells) that reach this climatological percentile
 # somewhere -- "major" events. The whole spell containing such a day is kept, and a
 # single cell is enough (no area-coverage requirement). Set HW_MAJOR_Q to disable
 # with 0 (then any >=3-day spell counts).
 MAJOR_Q = config.env_float("HW_MAJOR_Q", 0.99)
 # a day is a MAJOR-EVENT day only if the major percentile is reached over at least
 # this AREA fraction of the region (widespread extreme, not a single cell); those
-# days define the episodes -> genuine major heat waves stand out.
+# days define the episodes -> genuine major heatwaves stand out.
 MAJOR_COVER = config.env_float("HW_MAJOR_COVER", 0.05)
 
 
@@ -193,11 +193,11 @@ def frame(lon2d, lat2d, z_day, active_day, date, w, e, s, n, region, nactive,
     draw_coastlines(ax, lw=0.5)
     ax.set_xlim(w, e); ax.set_ylim(s, n)
     ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
-    sub = (f"{CS_DEF.upper()} heat-wave footprint · {nactive} cells · "
+    sub = (f"{CS_DEF.upper()} heatwave footprint · {nactive} cells · "
            f"{cover_frac:.0%} of region" if CS_DEF else
-           f"$\\pm${WINDOW}-day window · {nactive} cells in heat wave · "
+           f"$\\pm${WINDOW}-day window · {nactive} cells in heatwave · "
            f"{cover_frac:.0%} at 99th pctile")
-    ax.set_title(f"{region.title()} heat waves {date.date()}\n{sub}", fontsize=10.3)
+    ax.set_title(f"{region.title()} heatwaves {date.date()}\n{sub}", fontsize=10.3)
     cb = fig.colorbar(m, ax=ax, shrink=0.85)
     cb.set_label(f"T$_{{850}}$ anomaly  (σ from {REF_LABEL} daily mean)")
     fig.tight_layout()
@@ -316,7 +316,7 @@ def main():
         qual = np.where(ext_cover >= MAJOR_COVER)[0]
         print(f"[anim] {REGION}: {len(qual)} major-event days (>= {MAJOR_COVER:.0%} of "
               f"region at >= {MAJOR_Q:.0%}-pctile) in {YEAR} (vs "
-              f"{int(active.any(axis=(1, 2)).sum())} days with any heat wave)", flush=True)
+              f"{int(active.any(axis=(1, 2)).sum())} days with any heatwave)", flush=True)
         if len(qual) == 0:
             raise SystemExit("no major-event days -> no GIF")
         episodes = [[int(qual[0])]]
@@ -325,7 +325,7 @@ def main():
              else episodes.append([int(d)]))
         spans = [list(range(ep[0], ep[-1] + 1)) for ep in episodes]
         ep_hl = [active for _ in spans]     # time-based episodes share the daily mask
-        print(f"[anim] {len(spans)} major heat-wave episode(s): " + ", ".join(
+        print(f"[anim] {len(spans)} major heatwave episode(s): " + ", ".join(
             f"{times[s[0]].date()}..{times[s[-1]].date()} ({len(s)}d)" for s in spans),
             flush=True)
 

@@ -150,7 +150,7 @@ class Source:
 
     def model_grid(self):
         """The common 2.8deg NeuralGCM grid everything is scored on (read from this
-        run's 2.8deg truth cache -- identical to the heat-wave / NeuralGCM grid)."""
+        run's 2.8deg truth cache -- identical to the heatwave / NeuralGCM grid)."""
         if self._mgrid is None:
             with xr.open_dataset(self._truth_nc("temperature")) as ds:
                 self._mgrid = (ds.latitude.values.copy(), ds.longitude.values.copy())
@@ -164,7 +164,7 @@ class Source:
 
     def prediction_grid(self):
         """The grid used for ALL downstream analysis: the common 2.8deg model grid
-        (so GraphCast and NeuralGCM, their truth and the heat-wave footprint are on
+        (so GraphCast and NeuralGCM, their truth and the heatwave footprint are on
         one grid). Equals the native grid for NeuralGCM."""
         return self.model_grid() if self.needs_regrid else self.native_grid()
 
@@ -268,7 +268,7 @@ class Source:
         """Normalise a mixed list of region-name strings and/or GridPoints into
         GridPoints on THIS source's prediction grid. Region names become the cells
         inside their box (the global/regional/OOD path); GridPoints (e.g. a
-        heat-wave footprint) pass through unchanged."""
+        heatwave footprint) pass through unchanged."""
         lat, lon = self.prediction_grid()
         out = []
         for r in regions:

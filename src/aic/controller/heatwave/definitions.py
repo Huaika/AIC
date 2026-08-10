@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""The heat-wave DEFINITIONS compared in this project, as data.
+"""The heatwave DEFINITIONS compared in this project, as data.
 
 Each Definition names a variable (which daily-statistics file to read) and which
 daily statistic(s) must exceed their day-of-year percentile threshold for a day to
-count as "hot". A heat wave is >= MIN_DUR consecutive hot days (handled downstream).
+count as "hot". A heatwave is >= MIN_DUR consecutive hot days (handled downstream).
 Keeping the three definitions as a single list here means the detection + plotting
 code is written ONCE and simply iterates over definitions (no per-definition code).
 

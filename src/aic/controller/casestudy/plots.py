@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""Case study: NeuralGCM rollouts over EUROPE heat-wave episodes (mixture / p99).
+"""Case study: NeuralGCM rollouts over EUROPE heatwave episodes (mixture / p99).
 
 For each detected episode (see ``heatwave_mask``) this renders, using ONLY the grid
-cells in the episode's heat-wave FOOTPRINT (a ``GridPoints`` set):
+cells in the episode's heatwave FOOTPRINT (a ``GridPoints`` set):
 
-  Lagrangian (follow the afflicted region over its heat-wave lifetime + rollout
+  Lagrangian (follow the afflicted region over its heatwave lifetime + rollout
   window before + brief window after):
     * spaghetti   -- footprint-area-mean field, ERA5 (thick black) + one thin line
                      per rollout init in [start-10d, end], over valid [start-10d,
@@ -14,7 +14,7 @@ cells in the episode's heat-wave FOOTPRINT (a ``GridPoints`` set):
                      into the event).
 
   Eulerian (the whole footprint analysed over the episode's day-10 valid window;
-  cells never in the heat wave are left NaN / uncoloured):
+  cells never in the heatwave are left NaN / uncoloured):
     * drift map   -- ERA5 mean | forecast day-10 mean | mean day-10 error, cropped
                      to Europe, coloured only on the footprint.
 
@@ -91,7 +91,7 @@ def spaghetti_episode(sources, defn, year, ep, var, lev):
 
     fig, ax = plt.subplots(figsize=(12, 4.8))
     ax.axvspan(ep.start, ep.end, color="#f2c14e", alpha=0.25, zorder=0,
-               label="heat-wave episode")
+               label="heatwave episode")
     drew = False
     for src in sources:
         gp = footprint_points(src, ep, year)
@@ -117,7 +117,7 @@ def spaghetti_episode(sources, defn, year, ep, var, lev):
     ref = ref[(ref["date"] >= v0) & (ref["date"] <= v1)]
     ax.plot(ref["date"], ref["ref"], color="black", lw=2.2, zorder=3,
             label=f"{ref_src.ref_label} (daily mean)")
-    ax.set_title(f"Europe heat-wave {ep.label} — footprint-mean {label} @ {lev} hPa "
+    ax.set_title(f"Europe heatwave {ep.label} — footprint-mean {label} @ {lev} hPa "
                  f"({defn.name}, > {D.PTAG})", fontsize=12, color=P.INK, loc="left")
     ax.set_ylabel(f"{label} @{lev}hPa footprint mean [{units}]", color=P.INK)
     ax.set_xlabel("Valid time", color=P.INK)
@@ -243,8 +243,8 @@ def driftmap_episode(sources, defn, year, ep, var, lev):
                     coast=P.draw_coastlines)
         col += 2
     models = " vs ".join(dict.fromkeys(s.pretty for s, _ in got))
-    fig.suptitle(f"Europe heat-wave {ep.label} — day-10 {label}@{lev} hPa over the "
-                 f"heat-wave footprint ({ep.n_cells} cells, {models}, "
+    fig.suptitle(f"Europe heatwave {ep.label} — day-10 {label}@{lev} hPa over the "
+                 f"heatwave footprint ({ep.n_cells} cells, {models}, "
                  f"{defn.name} > {D.PTAG})", y=1.03, fontsize=12.5)
     fig.tight_layout()
     out = fig_dir(defn, year, ep) / f"drift-map_{meta['short']}_L{lev:04d}.png"
@@ -264,9 +264,9 @@ def year_overview(defn, year, active_da, eps, region="europe"):
     for e in eps:
         ax.axvspan(e.start, e.end, color="#f2c14e", alpha=0.3, zorder=0)
         ax.text(e.start, ax.get_ylim()[1] * 0.92, e.tag, fontsize=7, color="#666")
-    ax.set_title(f"Europe heat-wave coverage in {year} ({defn.name} > {D.PTAG}, "
+    ax.set_title(f"Europe heatwave coverage in {year} ({defn.name} > {D.PTAG}, "
                  f"{len(eps)} episodes)", fontsize=12, color=P.INK, loc="left")
-    ax.set_ylabel("% of Europe in heat wave", color=P.INK)
+    ax.set_ylabel("% of Europe in heatwave", color=P.INK)
     ax.xaxis.set_major_locator(mdates.MonthLocator())
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
     ax.set_xlim(times[0], times[-1]); ax.margins(x=0)
@@ -313,7 +313,7 @@ def run_year(sources, defn, year, pool=None, window=HM.DEFAULT_WINDOW, region="e
 
 def _aggregate_curves(pool, model_sources, var, lev):
     """[(color, pretty, aggregated sorted df)] for the models present in ``pool``,
-    pooling every heat wave in the pool together (region -> 'all')."""
+    pooling every heatwave in the pool together (region -> 'all')."""
     curves = []
     for src in model_sources:
         pers = pool.get((src.model, var, lev), [])
@@ -355,9 +355,9 @@ def shared_ylims(pools_sources):
 
 def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label,
                   ylims=None, fmts=None):
-    """Cross-episode comparison: pool the per-init drift over a SET of heat waves and
+    """Cross-episode comparison: pool the per-init drift over a SET of heatwaves and
     plot the mean RMSE and mean bias vs lead per model -- the models' average skill
-    during those heat waves. Only RMSE + bias (no regional maps or spaghetti).
+    during those heatwaves. Only RMSE + bias (no regional maps or spaghetti).
 
     ``subdir`` is the output folder under case_study/<def>_<ptag>/ and ``scope_label``
     names the set in the title. Called twice: once per year (``<year>/_aggregate/``,
@@ -389,7 +389,7 @@ def run_aggregate(pool, defn, model_sources, n_events, subdir, scope_label,
 
 def run_aggregate_byyear(year_runs, defn, ylims=None, fmts=None):
     """Combined figure per metric: the years (2023 | 2026) side by side, sharing one
-    y-axis, each panel pooling that year's heat waves -- complements the individual
+    y-axis, each panel pooling that year's heatwaves -- complements the individual
     <year>/_aggregate plots. Written to case_study/<def>_<ptag>/_by_year/."""
     outdir = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / "_by_year"
     outdir.mkdir(parents=True, exist_ok=True)
@@ -413,7 +413,7 @@ def run_aggregate_byyear(year_runs, defn, ylims=None, fmts=None):
 
 def run_error_maps(year_runs, defn, region="europe", fmts=None):
     """Error-map grids (rows = lead {+1,+5,+10 d}, columns = model) per year + one
-    combined figure, coloured only on the union of that year's heat-wave footprints
+    combined figure, coloured only on the union of that year's heatwave footprints
     (like the per-episode drift maps, but for the whole year). -> _error_maps/."""
     from aic.view import error_maps as EM
     extent = region_extent(region)
@@ -486,11 +486,11 @@ def main():
 
     for year, ypool, srcs, n_year in year_runs:
         run_aggregate(ypool, defn, srcs, n_year, subdir=f"{year}/_aggregate",
-                      scope_label=f"the {n_year} {year} {defn.name} heat waves",
+                      scope_label=f"the {n_year} {year} {defn.name} heatwaves",
                       ylims=ylims, fmts=fmts)
     if all_srcs:
         run_aggregate(pool, defn, all_srcs, n_events,
-                      subdir="_aggregate", scope_label=f"all {defn.name} heat waves",
+                      subdir="_aggregate", scope_label=f"all {defn.name} heatwaves",
                       ylims=ylims, fmts=fmts)
     if year_runs:
         run_aggregate_byyear(year_runs, defn, ylims=ylims, fmts=fmts)

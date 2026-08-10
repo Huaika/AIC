@@ -42,7 +42,7 @@ Full list is discoverable with `grep -rho 'os\.environ[^)]*' src/aic`. The famil
   data6 write hang).
 - **Case study:** `HW_CS_DEF` (mixture|cordex|…), `HW_PCT`, `CS_YEARS`, `CS_MODELS`,
   `CS_BEFORE`/`CS_AFTER`, `CS_ONLY_EP`, `HW_MANHATTAN` (spatio-temporal separation).
-- **Heat-wave detection:** `HW_WINDOW(S)`, `HW_Q`, `HW_MIN_DURATION`, `HW_EPISODE_GAP`,
+- **Heatwave detection:** `HW_WINDOW(S)`, `HW_Q`, `HW_MIN_DURATION`, `HW_EPISODE_GAP`,
   `HW_SPEC_REGION`, `HW_DEFS`, `HW_CACHE_DIR`, `HW_GIF_DIR`.
 - **Caching:** `AIC_FORCE_REBUILD=1` forces derived caches (drift-map day-10 fields)
   to be rebuilt instead of served — they are otherwise reused only when newer than

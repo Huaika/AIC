@@ -1,17 +1,17 @@
 #!/usr/bin/env python
-"""A framework to detect and CATEGORIZE heat waves from ERA5 850 hPa temperature.
+"""A framework to detect and CATEGORIZE heatwaves from ERA5 850 hPa temperature.
 
 Definition implemented (user-specified):
-    A heat wave is a period of AT LEAST 3 CONSECUTIVE DAYS during which the
+    A heatwave is a period of AT LEAST 3 CONSECUTIVE DAYS during which the
     00 UTC 850 hPa temperature exceeds the HIGHEST 5 % (i.e. the 95th percentile)
     of the values that fall within a +/-WINDOW-day window around that calendar day,
     over the 1991-2020 reference period.
 
     The threshold is therefore a smooth day-of-year climatological percentile
     (one value per calendar day, pooled over the reference years and a window of
-    neighbouring days). A region "experiences" a heat wave when its representative
+    neighbouring days). A region "experiences" a heatwave when its representative
     T850 (area-weighted mean by default) stays above that day's threshold for >= 3
-    consecutive days -- heat waves are treated per singular region (they may then
+    consecutive days -- heatwaves are treated per singular region (they may then
     move on or dissipate), so detection runs on a per-region 1-D daily series.
 
 Pipeline (all steps are independent, composable functions):
@@ -20,7 +20,7 @@ Pipeline (all steps are independent, composable functions):
     3. exceedance()               value - threshold[doy]  (>0 == a "hot" day)
     4. find_events()              >= 3-consecutive-hot-day spells -> [Heatwave]
     5. build_scheme()/categorize  severity classes from the region's own
-                                  reference-period heat-wave magnitude distribution
+                                  reference-period heatwave magnitude distribution
 
 Each Heatwave carries: start/end/duration, peak T850, peak & mean & cumulative
 exceedance (K and K*days), and a severity category. "Cumulative exceedance"
@@ -50,7 +50,7 @@ from aic import config
 from aic.regions import REGIONS, select_region, wrap180, to_lon180
 
 # Default severity classes, keyed by where an event's cumulative-exceedance
-# magnitude falls in the reference-period distribution of heat-wave magnitudes for
+# magnitude falls in the reference-period distribution of heatwave magnitudes for
 # THAT region (so the classes are region-relative, per the definition's framing).
 # (lower-quantile inclusive, upper-quantile exclusive) -> label.
 DEFAULT_SEVERITY_BINS = [
@@ -193,7 +193,7 @@ def find_events(region, dates, vals, anom, hot, min_duration=3) -> list[Heatwave
 def build_scheme(ref_events: list[Heatwave], bins=DEFAULT_SEVERITY_BINS):
     """Turn the reference-period events' magnitudes into quantile cut points, so a
     category is 'where this event's magnitude sits among that region's historical
-    heat waves'. Returns (sorted_magnitudes, bins)."""
+    heatwaves'. Returns (sorted_magnitudes, bins)."""
     mags = np.sort([e.cumulative_exceedance_Kdays for e in ref_events])
     return mags, bins
 
@@ -221,7 +221,7 @@ def catalog(files, region="europe", q=0.95, window=5, min_duration=3,
             ref_years=(1991, 2020), reduce="mean", point=None,
             bins=DEFAULT_SEVERITY_BINS):
     """End-to-end: build the region's daily series, threshold, detect + categorise
-    heat waves over the WHOLE series (calibrating categories on the events found in
+    heatwaves over the WHOLE series (calibrating categories on the events found in
     the reference sub-period). Returns (events, threshold, series)."""
     series = regional_series(files, region=region, reduce=reduce, point=point)
     thr = doy_threshold(series, q=q, window=window, ref_years=ref_years)
@@ -253,7 +253,7 @@ def main():
         raise SystemExit("no t850_24h_world_*.nc found (set HW_DATA_DIR)")
     regions = config.env_list("HW_REGIONS", ["europe"])
     # optional point analyses: HW_POINTS="lat,lon; lat,lon" (nearest grid cell) --
-    # the intended per-location scale for detecting localized heat waves.
+    # the intended per-location scale for detecting localized heatwaves.
     points = []
     for pair in (config.env_str("HW_POINTS", "") or "").split(";"):
         pair = pair.strip()
@@ -283,7 +283,7 @@ def main():
         n = len(events)
         by_cat = df["category"].value_counts().to_dict() if n else {}
         longest = int(df["duration_days"].max()) if n else 0
-        print(f"[hw] {region}: {n} heat waves ({series.sizes['time']} days), "
+        print(f"[hw] {region}: {n} heatwaves ({series.sizes['time']} days), "
               f"longest {longest} d, by category {by_cat} -> {csv.name}", flush=True)
 
     for (la, lo) in points:
@@ -295,7 +295,7 @@ def main():
         df.to_csv(csv, index=False)
         top = (df.sort_values("cumulative_exceedance_Kdays", ascending=False)
                  .head(5)) if len(df) else df
-        print(f"[hw] {label}: {len(df)} heat waves; top-5 by magnitude:", flush=True)
+        print(f"[hw] {label}: {len(df)} heatwaves; top-5 by magnitude:", flush=True)
         for _, r in top.iterrows():
             print(f"    {r['start']}..{r['end']} ({r['duration_days']:>2}d) "
                   f"peakT={r['peak_t850_K']:.1f}K cumExc={r['cumulative_exceedance_Kdays']:.1f} "

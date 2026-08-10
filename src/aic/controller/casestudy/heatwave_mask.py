@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""Heat-wave (grid cell, day) masks + episodes on the NeuralGCM 2.8deg grid.
+"""Heatwave (grid cell, day) masks + episodes on the NeuralGCM 2.8deg grid.
 
-The bridge between the definition-driven heat-wave DETECTOR
+The bridge between the definition-driven heatwave DETECTOR
 (``controller/heatwave``) and the rollout EVAL layer (``controller/eval``): it
-turns a heat-wave definition into a boolean ``(time, lat, lon)`` mask on the model
+turns a heatwave definition into a boolean ``(time, lat, lon)`` mask on the model
 grid, and splits it into temporally connected EPISODES with a spatial FOOTPRINT
 each -- the "set of grid points" the case-study plots analyse.
 
@@ -37,7 +37,7 @@ DEFAULT_COVER = config.env_float("HW_CS_COVER", 0.02)   # region area fraction
 DEFAULT_GAP = config.env_int("HW_EPISODE_GAP", 2)       # merge gap (days)
 DEFAULT_MIN_DAYS = config.env_int("HW_CS_MIN_DAYS", 3)  # min episode length
 # cells farther apart than this Manhattan distance (in grid cells) are NOT the same
-# heat wave -- unless a later day bridges them within this reach (spatio-temporal
+# heatwave -- unless a later day bridges them within this reach (spatio-temporal
 # connectivity). 0 falls back to the old time-only merging.
 DEFAULT_MANHATTAN = config.env_int("HW_MANHATTAN", 4)
 
@@ -53,7 +53,7 @@ def _load_stats(tag: str, year: int) -> xr.Dataset:
 def active_mask_da(defn, year: int, window: int = DEFAULT_WINDOW,
                    region: str = "europe") -> xr.DataArray:
     """Boolean ``(time, latitude, longitude)`` mask on the model grid: True where a
-    cell is inside a >=3-day heat-wave spell under ``defn`` in ``year``, restricted
+    cell is inside a >=3-day heatwave spell under ``defn`` in ``year``, restricted
     to ``region`` (cells outside the region box are False). Coordinates match the
     NeuralGCM 2.8deg grid, so it aligns with the rollouts/truth by coordinates."""
     tag, stats = defn.tag, list(defn.stats)
@@ -105,7 +105,7 @@ def region_coverage(active_da: xr.DataArray, region: str = "europe") -> np.ndarr
 
 @dataclass
 class Episode:
-    """One spatio-temporally connected heat-wave event (a single physical heat wave:
+    """One spatio-temporally connected heatwave event (a single physical heatwave:
     cells linked in space (Manhattan <= max) and time (gap), possibly merging later)."""
     idx: int                       # 1-based episode number within the year
     start: pd.Timestamp            # first day of the event
@@ -181,9 +181,9 @@ def episodes(active_da: xr.DataArray, region: str = "europe",
              cover_thr: float = DEFAULT_COVER, gap: int = DEFAULT_GAP,
              min_days: int = DEFAULT_MIN_DAYS,
              max_manhattan: int = DEFAULT_MANHATTAN) -> list[Episode]:
-    """Split the active mask into distinct heat waves by SPATIO-TEMPORAL connectivity:
+    """Split the active mask into distinct heatwaves by SPATIO-TEMPORAL connectivity:
     active cells belong to the same event when they are within `max_manhattan` grid
-    cells (Manhattan) and within `gap` days -- so spatially separated heat waves are
+    cells (Manhattan) and within `gap` days -- so spatially separated heatwaves are
     kept apart unless a later day bridges them. An event is kept if it spans
     >= `min_days` distinct days and reaches >= `cover_thr` of the region at its peak.
     Each event carries its 2-D FOOTPRINT (union of its cells) and its (T,Y,X) mask."""

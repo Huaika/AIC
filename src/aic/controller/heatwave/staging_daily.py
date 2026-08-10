@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Stage ERA5 DAILY statistics (min / max / 00 UTC value) for the heat-wave
+"""Stage ERA5 DAILY statistics (min / max / 00 UTC value) for the heatwave
 definitions, one variable-year per process, from ARCO-ERA5.
 
 Streams sub-daily fields and reduces to per-day statistics -- so the ECMWF-style
@@ -89,7 +89,7 @@ def create_part(days, lat, lon) -> netCDF4.Dataset:
         v.units = "K"
     nc.source = (f"ERA5 (ARCO) daily {STATS} of {ARCO_VAR}"
                  f"{'' if IS_SURFACE else f' @ {LEVEL} hPa'}, {CADENCE}-hourly samples, "
-                 f"year {YEAR}, native 0.25 deg. Heat-wave definition input.")
+                 f"year {YEAR}, native 0.25 deg. Heatwave definition input.")
     nc.setncattr("_n_days_written", 0)
     nc.sync()
     return nc

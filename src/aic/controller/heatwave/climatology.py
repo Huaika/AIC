@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Percentile climatologies on the model grid -- the threshold each heat-wave
+"""Percentile climatologies on the model grid -- the threshold each heatwave
 definition compares against. Two flavours:
 
   * ``doy_percentile``    -- a per-calendar-day threshold with a +/-window (ours /

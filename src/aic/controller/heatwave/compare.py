@@ -1,14 +1,15 @@
 #!/usr/bin/env python
-"""Compare the three heat-wave DEFINITIONS (ours / mixture / ECMWF) on the model
-grid, ACROSS a sweep of +/-window sizes, for a target year.
+"""Compare the three heatwave DEFINITIONS (Copernicus / Copernicus Adjusted /
+EURO-CORDEX) on the model grid, ACROSS a sweep of +/-window sizes, for a target year.
 
-Colour encodes the definition (blue=ours, purple=mixture, red=ECMWF); the SHADE
-encodes the window size -- darker = smaller window, lighter = larger.
+Colour encodes the definition (red=Copernicus, blue=Copernicus Adjusted,
+green=EURO-CORDEX); the SHADE encodes the window size -- darker = smaller window,
+lighter = larger.
 
 Two families of figures (each overlays all definitions x windows):
-  1. amount vs duration : x = heat-wave duration (days), y = count / area affected.
+  1. amount vs duration : x = heatwave duration (days), y = count / area affected.
   2. timing over the year: x = day of year (labelled by month, leap-safe), y = area
-     of the region in a heat wave on that day -- when the heat waves happen.
+     of the region in a heatwave on that day -- when the heatwaves happen.
 
 Env: HW_WINDOWS (default "0,1,3,5,7"), HW_SPEC_REGION (default world),
 HW_YEAR (default 2023), HW_DEFS, HW_DAILY_DIR, HW_CACHE_DIR, HW_FIG_DIR.
@@ -146,7 +147,7 @@ def main():
         fig.savefig(out, bbox_inches="tight"); plt.close(fig)
         print(f"[compare] wrote {out.name}", flush=True)
 
-    # ---- 2. timing over the year (area in heat wave per day) ----
+    # ---- 2. timing over the year (area in heatwave per day) ----
     tp, tl = month_ticks(YEAR)
     fig, ax = plt.subplots(figsize=(9.2, 4.6))
     for d in defs:

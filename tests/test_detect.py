@@ -1,4 +1,4 @@
-"""Tests for the heat-wave spell detector (aic.controller.heatwave.detect)."""
+"""Tests for the heatwave spell detector (aic.controller.heatwave.detect)."""
 import numpy as np
 
 from aic.controller.heatwave.detect import active_mask

@@ -4,13 +4,13 @@ helper that builds one out of lat/lon rectangles.
 
 Every analysis reduces a field over some set of grid cells: the global analysis
 over the whole globe, the regional analysis over a continent box, the
-out-of-distribution (NextGEMS) analysis over the same boxes, and the heat-wave
+out-of-distribution (NextGEMS) analysis over the same boxes, and the heatwave
 case study over an arbitrary per-cell footprint. Instead of hard-wiring a
 rectangular crop, the plotters take a ``GridPoints`` -- a named boolean mask on
 the model grid -- and reduce through ONE masked, cos(lat)-weighted mean
 (``masked_area_mean``). ``boxes_to_points`` turns rectangles into such a set, so
 the box-based analyses (global / regional / OOD) go through the exact same path as
-the case study; the heat-wave masks supply their footprint directly.
+the case study; the heatwave masks supply their footprint directly.
 
 A box-derived ``GridPoints`` reduces to the identical cells and weights as the old
 ``lat_weighted_mean(select_region(da, region))``, so existing figures are
@@ -64,7 +64,7 @@ class GridPoints:
 
     @classmethod
     def from_mask(cls, key: str, mask2d: xr.DataArray, extent) -> "GridPoints":
-        """An arbitrary per-cell footprint (e.g. a heat-wave episode)."""
+        """An arbitrary per-cell footprint (e.g. a heatwave episode)."""
         return cls(key, mask2d, tuple(extent))
 
     @property

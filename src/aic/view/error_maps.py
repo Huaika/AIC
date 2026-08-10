@@ -8,7 +8,7 @@ each year's model columns). One shared diverging 'Error [units]' colour scale
 across every figure, no titles, no lat/lon axis labels.
 
 The data (``fields[year][model][lead] -> 2-D error DataArray``) is gathered by the
-caller (view.ood over the world; controller.casestudy.plots over the heat-wave
+caller (view.ood over the world; controller.casestudy.plots over the heatwave
 footprint), so this module only lays the panels out.
 """
 from __future__ import annotations

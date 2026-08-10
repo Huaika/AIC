@@ -9,8 +9,8 @@ Each analysis is a module with a `main()` and a matching console entry point
 | `aic-drift`            | `aic.view.drift`                      | RMSE + bias vs lead                    |
 | `aic-drift-maps`       | `aic.view.drift_maps`                 | day-10 drift maps                      |
 | `aic-ood`              | `aic.view.ood`                        | multi-year out-of-distribution figures |
-| `aic-casestudy`        | `aic.controller.casestudy.plots`      | heat-wave case study (per episode + aggregate) |
-| `aic-heatwave-compare` | `aic.controller.heatwave.compare`     | compare heat-wave definitions          |
+| `aic-casestudy`        | `aic.controller.casestudy.plots`      | heatwave case study (per episode + aggregate) |
+| `aic-heatwave-compare` | `aic.controller.heatwave.compare`     | compare heatwave definitions          |
 
 Configuration is entirely via env vars — see [configuration.md](configuration.md).
 
@@ -22,7 +22,7 @@ EVAL_SOURCES=neuralgcm,graphcast EVAL_YEAR=2023 EVAL_REGIONS=world,europe \
   EVAL_VARS=temperature NG_LEVELS=850 EVAL_FIG_ROOT=$SCRATCH/figs \
   aic-drift-maps
 
-# Heat-wave case study, cordex definition, 2023+2026, both models
+# Heatwave case study, cordex definition, 2023+2026, both models
 EVAL_RUN=era5_2023 HW_CS_DEF=cordex HW_PCT=0.99 CS_YEARS="2023 2026" \
   CS_MODELS=neuralgcm,graphcast EVAL_VARS=temperature,geopotential \
   EVAL_FIG_ROOT=$SCRATCH/figs  aic-casestudy
