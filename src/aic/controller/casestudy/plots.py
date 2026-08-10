@@ -430,6 +430,7 @@ def run_error_maps(year_runs, defn, region="europe", fmts=None):
     for var in C.selected_variables():
         meta = C.VARIABLES[var]
         units, short = meta["units"], meta["short"]
+        cmap = meta.get("err_cmap", "RdBu_r")        # per-variable diverging error cmap
         for lev in CS_LEVELS.get(var, [850]):
             yearly, heat = {}, {}
             for year, ypool, srcs, n_year in year_runs:
@@ -460,12 +461,12 @@ def run_error_maps(year_runs, defn, region="europe", fmts=None):
             stem = f"{short}_L{lev:04d}"
             if yearly:
                 EM.render_error_maps(yearly, sorted(yearly), units, extent=extent,
-                                     coast=P.draw_coastlines, out_dir=outdir,
-                                     stem=stem, fmts=fmts)              # default, no label
+                                     coast=P.draw_coastlines, out_dir=outdir, stem=stem,
+                                     fmts=fmts, cmap=cmap)             # default, no label
             if heat:
                 EM.render_error_maps(heat, sorted(heat), units, extent=extent,
-                                     coast=P.draw_coastlines, out_dir=outdir,
-                                     stem=stem, fmts=fmts, label="heatwave")
+                                     coast=P.draw_coastlines, out_dir=outdir, stem=stem,
+                                     fmts=fmts, cmap=cmap, label="heatwave")
 
 
 def main():

@@ -31,12 +31,13 @@ def _order(models):
 
 
 def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmts=None,
-                      label=None):
+                      label=None, cmap="RdBu_r"):
     """Write a per-year error-map grid for each year + one combined grid across years.
 
     ``fields[year][model][lead]`` is a 2-D error DataArray (already masked to the
     domain) or None. All figures share one symmetric colour scale (99th-pct of |error|
-    over every panel), so years/leads/models are directly comparable. ``label`` (e.g.
+    over every panel), so years/leads/models are directly comparable. ``cmap`` is the
+    diverging colormap (per variable; e.g. PuOr_r for geopotential). ``label`` (e.g.
     'heatwave') tags the variant: it is appended to every filename and drawn small in
     the corner of each grid. Leave it None for the default (unlabelled) variant -- the
     OOD grids and the case-study 'yearly' grids -- which keep their clean filenames."""
@@ -55,7 +56,8 @@ def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmt
         fig = P.error_map_grid(
             cells, row_labels=row_labels,
             col_labels=[S.MODEL_PRETTY.get(m, m) for m in models],
-            extent=extent, cbar_label=cbar, coast=coast, vlim=vlim, spec_label=label)
+            extent=extent, cbar_label=cbar, coast=coast, vlim=vlim, cmap=cmap,
+            spec_label=label)
         for p in P.save_fig(fig, out_dir / f"{stem}{tag}_{y}.pdf", fmts=fmts):
             print(f"[errmap] wrote {p.name}", flush=True)
 
@@ -70,7 +72,7 @@ def render_error_maps(fields, years, units, *, extent, coast, out_dir, stem, fmt
         cells, row_labels=row_labels,
         col_labels=[S.MODEL_PRETTY.get(m, m) for (_, m) in cols],
         group_labels=group, extent=extent, cbar_label=cbar, coast=coast, vlim=vlim,
-        spec_label=label)
+        cmap=cmap, spec_label=label)
     yrs = "-".join(str(y) for y in years)
     for p in P.save_fig(fig, out_dir / f"{stem}{tag}_{yrs}_combined.pdf", fmts=fmts):
         print(f"[errmap] wrote {p.name}", flush=True)

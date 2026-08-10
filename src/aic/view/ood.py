@@ -175,7 +175,8 @@ def error_maps(sources, var, levels, region):
             fields.setdefault(s.year, {})[s.model] = {L: ef[L][0] for L in EM.LEADS}
         EM.render_error_maps(fields, sorted(fields), units, extent=extent,
                              coast=P.draw_coastlines, out_dir=_figdir(var, "error_maps"),
-                             stem=f"{meta['short']}_L{lev:04d}", fmts=OOD_FMTS)
+                             stem=f"{meta['short']}_L{lev:04d}", fmts=OOD_FMTS,
+                             cmap=meta.get("err_cmap", "RdBu_r"))
 
 
 def main():

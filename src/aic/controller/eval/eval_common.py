@@ -177,13 +177,17 @@ TRUTH_BATCH = config.env_int("EVAL_TRUTH_BATCH", 24)
 # file (and in both truth sources). ``short`` is the filename/label tag, used
 # for cache + figure names; ``nextgems_src`` is that variable's short name in
 # the NextGEMS 3D file (ERA5 inputs already use the canonical NeuralGCM names).
-# ``cmap`` is the field colormap for drift maps (drift itself is always RdBu_r).
+# ``cmap`` is the field colormap for drift maps. ``err_cmap`` is the diverging
+# colormap for the signed error/drift maps (defaults to RdBu_r when unset); set it per
+# variable to keep variables visually distinct -- e.g. geopotential uses PuOr_r so its
+# regional error maps don't read as temperature (RdBu_r).
 # --------------------------------------------------------------------------- #
 VARIABLES = {
     "temperature":         dict(short="T", units="K",       nextgems_src="t",
                                  cmap="RdYlBu_r", label="temperature"),
     "geopotential":        dict(short="Z", units="m^2/s^2", nextgems_src="z",
-                                 cmap="viridis",  label="geopotential"),
+                                 cmap="viridis",  err_cmap="PuOr_r",
+                                 label="geopotential"),
     "specific_humidity":   dict(short="Q", units="kg/kg",   nextgems_src="q",
                                  cmap="viridis",  label="specific humidity"),
     "u_component_of_wind": dict(short="U", units="m/s",      nextgems_src="u",
