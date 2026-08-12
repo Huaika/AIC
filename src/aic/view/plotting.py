@@ -101,7 +101,7 @@ def draw_skill_metric(ax, curves, metric, *, zero_line=False, lw=1.9):
     carries ``<metric>_lo``/``<metric>_hi`` (bootstrap CI), a matching shaded band is
     drawn."""
     if zero_line:
-        ax.axhline(0.0, color="0.4", lw=0.8, ls=":", alpha=0.6)
+        ax.axhline(0.0, color="0.25", lw=1.2, ls=":", alpha=0.85)
     banded = False
     for color, label, df in curves:
         lo, hi = f"{metric}_lo", f"{metric}_hi"
