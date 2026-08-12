@@ -20,6 +20,7 @@ outputs/figures/*
 !outputs/figures/out_of_distribution/
 !outputs/figures/heatwave2023/
 !outputs/figures/heatwave2026/
+!outputs/figures/diurnal_cycle/
 # ...but not the GIFs (large; left out for now) -- keep only the static figures
 outputs/figures/**/*.gif
 
