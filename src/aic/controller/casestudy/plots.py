@@ -427,7 +427,7 @@ def run_error_maps(year_runs, defn, region="europe", fmts=None):
     from aic.view import error_maps as EM
     extent = region_extent(region)
     outdir = C.FIG_ROOT / "case_study" / f"{defn.name}_{D.PTAG}" / "_error_maps"
-    scopes = [("year", "complete year"), ("heatwave", "heatwaves")]
+    scopes = [("outside", "outside of heatwaves"), ("heatwave", "heatwaves")]
     for var in C.selected_variables():
         meta = C.VARIABLES[var]
         units, short = meta["units"], meta["short"]
@@ -435,15 +435,16 @@ def run_error_maps(year_runs, defn, region="europe", fmts=None):
         for lev in CS_LEVELS.get(var, [850]):
             fields = {}                              # fields[year][model][scope][lead]
             for year, ypool, srcs, n_year in year_runs:
-                eps = HM.episodes(HM.active_mask_da(defn, year, HM.DEFAULT_WINDOW, region),
-                                  region)
+                amask = HM.active_mask_da(defn, year, HM.DEFAULT_WINDOW, region)
+                eps = HM.episodes(amask, region)
                 for src in srcs:
                     scoped = fields.setdefault(year, {}).setdefault(src.model, {})
-                    # complete year: every init of the year, whole region, unmasked
+                    # outside of heatwaves: every init, whole region, every grid cell --
+                    # but each cell's mean skips the times that cell was in a heatwave.
                     yfiles = list(src.pred_files())
                     if yfiles:
-                        yef = src.error_fields_by_lead(var, lev, yfiles, EM.LEADS)
-                        scoped["year"] = {L: yef[L][0] for L in EM.LEADS}
+                        oef = src.error_fields_outside(var, lev, yfiles, EM.LEADS, amask)
+                        scoped["outside"] = {L: oef[L][0] for L in EM.LEADS}
                     # heatwave: episode-window inits, masked to the footprint union
                     if not eps:
                         continue

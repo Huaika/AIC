@@ -421,6 +421,54 @@ class Source:
             ds.close()
         return {L: (acc[L] / n[L] if n[L] else None, n[L]) for L in acc}
 
+    def error_fields_outside(self, var, lev, files, leads, active_da):
+        """Mean forecast-error field at each lead like ``error_fields_by_lead``, but at
+        each (cell, lead) the mean EXCLUDES the inits whose valid time falls while that
+        cell is inside a heatwave (``active_da``: a daily ``(time, lat, lon)`` bool mask).
+
+        Every grid cell is kept -- a cell's mean is taken over its NON-heatwave times
+        only; cells never in a heatwave keep the full-year mean. Returns
+        ``{lead: (err2d|None, n)}`` where ``n`` is the max per-cell sample count."""
+        truth = self.truth_at_levels(var, [lev]).sel(level=lev)
+        sums = {int(L): None for L in leads}
+        cnts = {int(L): None for L in leads}
+        coords = None
+        for f in files:
+            ds = self.open_pred(f)
+            fld = (self.regrid_field(ds[var].sel(level=lev))
+                   .transpose("time", "latitude", "longitude"))
+            lh = ds["lead_hours"].values
+            vt = ds["valid_time"].values
+            for L in list(sums):
+                where = np.where(lh == L)[0]
+                if not len(where):
+                    continue
+                i = int(where[0])
+                p = fld.isel(time=i)
+                t = (truth.sel(time=vt[i], method="nearest")
+                     .assign_coords(latitude=p.latitude, longitude=p.longitude))
+                e = (p - t).values
+                # heatwave here? align the daily mask to this grid (False where absent)
+                keep = ~(active_da.sel(time=vt[i], method="nearest")
+                         .reindex_like(p, fill_value=False).values.astype(bool))
+                if sums[L] is None:
+                    sums[L] = np.zeros_like(e, dtype=float)
+                    cnts[L] = np.zeros(e.shape, dtype=float)
+                    coords = {"latitude": p.latitude, "longitude": p.longitude}
+                sums[L] += np.where(keep, e, 0.0)
+                cnts[L] += keep
+            ds.close()
+        out = {}
+        for L in sums:
+            if sums[L] is None:
+                out[L] = (None, 0)
+                continue
+            with np.errstate(invalid="ignore", divide="ignore"):
+                field = np.where(cnts[L] > 0, sums[L] / cnts[L], np.nan)
+            out[L] = (xr.DataArray(field, dims=("latitude", "longitude"), coords=coords),
+                      int(cnts[L].max()))
+        return out
+
     def day10_fields(self, var, short, levels, period) -> xr.Dataset | None:
         """Day-10 clim / reference clim / drift fields for a period, cached NC.
         None if the period has no init-days."""
