@@ -287,6 +287,16 @@ class Source:
                        else GP.GridPoints.from_region(lat, lon, r))
         return out
 
+    def _drop_lead0(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Drop NeuralGCM's lead-0 row. NeuralGCM writes a lead-0 reconstruction of the
+        analysis; GraphCast starts at +6 h. Removing it puts both models on the same lead
+        axis for every lead-axis figure (spaghetti, bias/rmse-vs-lead). No effect on
+        GraphCast (it has no lead 0). Applied on the returned frame only, so the CSV
+        caches keep every lead."""
+        if self.model == "neuralgcm" and "lead_hours" in df.columns:
+            df = df[df["lead_hours"] != 0].reset_index(drop=True)
+        return df
+
     # -- per-source data builders (cache paths identical to the single-RUN ones) #
     def rollout_gmean(self, var, short, levels, regions, files=None,
                       cache=True) -> pd.DataFrame:
@@ -305,7 +315,7 @@ class Source:
             df = pd.read_csv(csv, parse_dates=["init_date"])
             if "region" in df.columns and set(keys) <= set(df["region"].unique()):
                 print(f"[{self.run}] rollout cached {csv}")
-                return df
+                return self._drop_lead0(df)
             print(f"[{self.run}] rollout cache missing regions -> recompute")
         files = files if files is not None else self.pred_files()
         print(f"[{self.run}] area-mean {var} @ {len(levels)} lev, "
@@ -330,7 +340,7 @@ class Source:
         if use_cache:
             df.to_csv(csv, index=False)
             print(f"[{self.run}] wrote {csv}")
-        return df
+        return self._drop_lead0(df)
 
     def drift_per_init(self, var, short, levels, regions, files=None,
                        cache=True) -> pd.DataFrame:
@@ -348,7 +358,7 @@ class Source:
             df = pd.read_csv(csv, parse_dates=["init_date"])
             if "region" in df.columns and set(keys) <= set(df["region"].unique()):
                 print(f"[{self.run}] drift cached {csv}")
-                return df
+                return self._drop_lead0(df)
             print(f"[{self.run}] drift cache missing regions -> recompute")
         truth = self.truth_at_levels(var, levels)
         files = files if files is not None else self.pred_files()
@@ -380,7 +390,7 @@ class Source:
         if use_cache:
             df.to_csv(csv, index=False)
             print(f"[{self.run}] wrote {csv}")
-        return df
+        return self._drop_lead0(df)
 
     def error_fields_by_lead(self, var, lev, files, leads):
         """Mean forecast-error field (pred - truth) at each target lead (hours) over
