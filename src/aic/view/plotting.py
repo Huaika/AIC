@@ -42,7 +42,7 @@ def save_fig(fig, path, *, fmts=None, dpi=150, close=True):
     written = []
     for fmt in fmts:
         p = path.with_suffix(f".{fmt.lstrip('.')}")
-        fig.savefig(p, dpi=dpi, bbox_inches="tight")
+        fig.savefig(p, dpi=dpi, bbox_inches="tight", pad_inches=0.2)
         written.append(p)
     if close:
         plt.close(fig)

@@ -141,10 +141,10 @@ def main():
         for s in ("top", "right"): ax.spines[s].set_visible(False)
         lwin = ax.legend(handles=win_leg, title="time window", loc="upper right",
                          bbox_to_anchor=(1.0, 1.0), ncol=len(WINDOWS),
-                         fontsize=8, title_fontsize=8, frameon=False)
+                         fontsize=11, title_fontsize=11, frameon=False)
         ax.add_artist(lwin)
         ax.legend(handles=def_leg, loc="upper right",
-                  bbox_to_anchor=(1.0, 0.82), fontsize=8, frameon=False)
+                  bbox_to_anchor=(1.0, 0.82), fontsize=11, frameon=False)
         fig.tight_layout()
         out = FIGDIR / f"heatwave{YEAR}_defcompare_{metric}_{D.PTAG}_wsweep_2p8deg{rtag}.pdf"
         for p in P.save_fig(fig, out, fmts=FMTS):
@@ -164,10 +164,10 @@ def main():
     ax.set_ylabel("Area in heatwave (10$^6$ km$^2$)", color=INK)
     ax.grid(True, color=GRID, lw=0.6)
     for s in ("top", "right"): ax.spines[s].set_visible(False)
-    l1 = ax.legend(handles=def_leg, loc="upper left", fontsize=8, frameon=False)
+    l1 = ax.legend(handles=def_leg, loc="upper left", fontsize=11, frameon=False)
     ax.add_artist(l1)
     ax.legend(handles=win_leg, title="time window", loc="upper right",
-              fontsize=8, title_fontsize=8, ncol=len(WINDOWS), frameon=False)
+              fontsize=11, title_fontsize=11, ncol=len(WINDOWS), frameon=False)
     fig.tight_layout()
     out = FIGDIR / f"heatwave{YEAR}_defcompare_timing_{D.PTAG}_wsweep_2p8deg{rtag}.pdf"
     for p in P.save_fig(fig, out, fmts=FMTS):
