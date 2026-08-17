@@ -144,11 +144,11 @@ def skill_facets(panels, metric, *, ylabel, zero_line=False, ylim=None,
     axes = axes[0]
     for ax, (title, curves) in zip(axes, panels):
         draw_skill_metric(ax, curves, metric, zero_line=zero_line)
-        ax.set_title(str(title), fontsize=12)
+        ax.set_title(str(title), fontsize=15)
         despine(ax)
         # each year-panel keeps its own legend, auto-placed so it clears that
         # panel's data (the panels can have quite different data locations)
-        ax.legend(loc="best", fontsize=9, framealpha=0.9)
+        ax.legend(loc="best", fontsize=12, framealpha=0.9)
     if ylim is not None:
         axes[0].set_ylim(*ylim)     # sharey -> applies to all panels
     axes[0].set_ylabel(ylabel)
@@ -181,7 +181,7 @@ def map_panel(ax, field, *, cmap, vmin, vmax, title, cbar_label, extent, fig,
         coast(ax)
     w, e, s, n = extent
     ax.set_xlim(w, e); ax.set_ylim(s, n)
-    ax.set_title(title, fontsize=10); ax.grid(alpha=0.2)
+    ax.set_title(title, fontsize=13); ax.grid(alpha=0.2)
     ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
 
 
@@ -246,9 +246,9 @@ def error_map_grid(cells, *, row_labels, col_labels, extent, cbar_label,
             ax.set_xlim(w, e); ax.set_ylim(s, n)
             ax.tick_params(labelbottom=False, labelleft=False, length=0)
             if r == 0:
-                ax.set_title(col_labels[c], fontsize=10)
+                ax.set_title(col_labels[c], fontsize=13)
             if c == 0:
-                ax.set_ylabel(row_labels[r], fontsize=11)
+                ax.set_ylabel(row_labels[r], fontsize=14)
     if m is not None:
         fig.colorbar(m, ax=axes.ravel().tolist(), location="right", shrink=0.9,
                      pad=0.008, label=cbar_label)
@@ -258,8 +258,8 @@ def error_map_grid(cells, *, row_labels, col_labels, extent, cbar_label,
         for text, c0, c1 in level:
             x = (axes[0][c0].get_position().x0 + axes[0][c1].get_position().x1) / 2
             fig.text(x, axtop + 0.02 + i * 0.055, str(text), ha="center", va="bottom",
-                     fontsize=12 + i, fontweight="bold")
+                     fontsize=15 + i, fontweight="bold")
     if spec_label:                            # variant tag (top-left, clear of headers)
         fig.text(0.01, 0.99, str(spec_label), ha="left", va="top",
-                 fontsize=10, fontstyle="italic", color=INK)
+                 fontsize=13, fontstyle="italic", color=INK)
     return fig

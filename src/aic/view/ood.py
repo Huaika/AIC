@@ -78,7 +78,7 @@ def skill_year(year, year_aggs, var, levels, region):
             fig, ax = plt.subplots(figsize=(6.6, 4.4))
             P.draw_skill_metric(ax, curves, metric, zero_line=zero)
             ax.set_ylabel(P.skill_ylabel(metric, label, lev, units))
-            ax.legend(loc="best", fontsize=9, framealpha=0.9)
+            ax.legend(loc="best", fontsize=12, framealpha=0.9)
             P.despine(ax)
             fig.tight_layout()
             out = _figdir(var, kind) / fig_naming.figure_name(
@@ -135,7 +135,7 @@ def spaghetti_multiyear(sources, var, levels, region):
             ax.plot(x, r["ref_gmean"], color=S.REF_COLOR, lw=1.8, alpha=0.9, zorder=3)
             ax.annotate(str(yr), xy=(x[-1], float(r["ref_gmean"].iloc[-1])),
                         xytext=(6, 0), textcoords="offset points", va="center",
-                        ha="left", fontsize=9, fontweight="bold", color=P.INK,
+                        ha="left", fontsize=12, fontweight="bold", color=P.INK,
                         annotation_clip=False)
         for s in sources:
             r = rolls[s.run]
@@ -148,7 +148,7 @@ def spaghetti_multiyear(sources, var, levels, region):
               + [Line2D([], [], color=S.model_color(m), lw=2,
                         label=S.MODEL_PRETTY.get(m, m))
                  for m in dict.fromkeys(s.model for s in sources)])
-        ax.legend(handles=mh, loc="upper left", fontsize=8, framealpha=0.9)
+        ax.legend(handles=mh, loc="upper left", fontsize=11, framealpha=0.9)
         ax.set_ylabel(P.spaghetti_ylabel(label, lev, units, area))
         ax.set_xlabel("Day of year")
         P.month_axis(ax); ax.margins(x=0.01); ax.grid(alpha=0.25)
