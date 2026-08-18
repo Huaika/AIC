@@ -117,12 +117,28 @@ def draw_skill_metric(ax, curves, metric, *, zero_line=False, lw=1.9):
     ax.grid(True, alpha=0.3)
 
 
-def skill_ylabel(metric, var_label, level, units):
+def wrap_label(text, max_chars=30):
+    """Break a long axis label into two balanced lines (split at the word boundary
+    that minimises the longer line). A rotated y-label longer than the axes are tall
+    runs off the canvas and gets clipped -- ``[K]`` and friends were losing their tail
+    on the skill figures -- so long labels are wrapped instead of shrunk."""
+    text = str(text)
+    words = text.split()
+    if len(text) <= max_chars or len(words) < 2:
+        return text
+    splits = [(" ".join(words[:i]), " ".join(words[i:])) for i in range(1, len(words))]
+    a, b = min(splits, key=lambda p: max(len(p[0]), len(p[1])))
+    return f"{a}\n{b}"
+
+
+def skill_ylabel(metric, var_label, level, units, wrap=True):
     """Shared y-axis label for a skill plot, e.g. 'Weighted Temperature Mean Bias at
     850 hPa [K]' (bias) / 'Weighted Geopotential RMSE at 500 hPa [m^2/s^2]' (rmse).
-    'Weighted' because the spatial mean is cos(lat) area-weighted."""
+    'Weighted' because the spatial mean is cos(lat) area-weighted. Wrapped over two
+    lines by default so it always fits the axes height (``wrap=False`` for one line)."""
     stat = "Mean Bias" if metric == "bias" else "RMSE"
-    return f"Weighted {str(var_label).capitalize()} {stat} at {level} hPa [{units}]"
+    label = f"Weighted {str(var_label).capitalize()} {stat} at {level} hPa [{units}]"
+    return wrap_label(label) if wrap else label
 
 
 def spaghetti_ylabel(var_label, level, units, area="global"):
