@@ -111,16 +111,15 @@ def _wrap(d: pd.DataFrame) -> pd.DataFrame:
 # --------------------------------------------------------------------------- #
 # figure: rows = variable, columns = year
 # --------------------------------------------------------------------------- #
-def _hour_axis(ax, xlabel=True):
+def _hour_axis(ax, bottom=True):
     ax.set_xticks([0, 6, 12, 18, 24])
     ax.set_xticklabels(["00", "06", "12", "18", "24"])
     ax.set_xlim(-0.6, 24.6)
-    if xlabel:
-        ax.set_xlabel("Time of Day [UTC]")
+    ax.tick_params(labelbottom=bottom)          # x-tick labels only on the bottom row
     ax.grid(True, alpha=0.3)
 
 
-def diurnal_grid(cells, specs, years, region, area):
+def diurnal_grid(cells, specs, years, region, area, year_label):
     """One figure, ``rows = specs`` (variable, level) x ``columns = years``.
 
     Each cell draws the diurnal cycle of that dataset: the offset of each synoptic
@@ -142,8 +141,10 @@ def diurnal_grid(cells, specs, years, region, area):
             ax = axes[r][c]
             ax.set_ylim(-lim, lim)
             ax.axhline(0.0, color="0.25", lw=1.2, ls=":", alpha=0.85)
-            _hour_axis(ax, xlabel=(r == nr - 1))
+            _hour_axis(ax, bottom=(r == nr - 1))
             P.despine(ax, sides=("top",))
+            if r == 0:                                   # column title only on the top row
+                ax.set_title(year_label.get(y, str(y)))
             item = cells.get((var, y))
             if item is None:
                 ax.text(0.5, 0.5, "no data", transform=ax.transAxes, ha="center",
@@ -161,22 +162,16 @@ def diurnal_grid(cells, specs, years, region, area):
             ax2.set_ylim(daily_mean - lim, daily_mean + lim)
             P.despine(ax2, sides=("top",))
             if c == nc - 1:
-                ax2.set_ylabel(f"{str(label).capitalize()} at {lev} hPa [{units}]",
-                               fontsize=9)
+                ax2.set_ylabel(f"{str(label).capitalize()} at {lev} hPa [{units}]")
             else:
                 ax2.tick_params(labelright=False)
-            if r == 0:
-                ax.set_title(f"{y}  ({s.ref_label})", fontsize=12)
-            else:
-                ax.set_title(str(y), fontsize=12)
             ax.annotate(f"daily mean {daily_mean:.1f} {units}", xy=(0.02, 0.03),
-                        xycoords="axes fraction", fontsize=8, color=P.MUTED)
+                        xycoords="axes fraction", color=P.MUTED)
             if c == 0:
                 ax.set_ylabel(f"{str(label).capitalize()} @ {lev} hPa\n"
-                              f"offset from daily mean [{units}]", fontsize=10)
-    fig.suptitle(f"Diurnal cycle of the datasets -- {str(area).capitalize()} mean, "
-                 f"6-hourly steps composited over the year", fontsize=12)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
+                              f"offset from daily mean [{units}]")
+    fig.supxlabel("Time of Day [UTC]")               # one shared x-label for all columns
+    fig.tight_layout()
     stem = "-".join(f"{C.VARIABLES[v]['short']}L{l:04d}" for v, l in specs)
     out = _figdir("diurnal_cycle") / (
         f"dataset_{fig_naming.REGION_ABBR.get(region, region)}_{stem}_"
@@ -233,6 +228,7 @@ def main():
             datasets.append(s)
     datasets.sort(key=lambda s: s.year)
     years = [s.year for s in datasets]
+    year_label = {s.year: s.ref_label for s in datasets}   # "<dataset> <year>" per column
     specs = parse_specs()
     print("[diurnal] datasets: " + ", ".join(s.ref_label for s in datasets))
     print("[diurnal] rows: " + ", ".join(f"{v}@{l}" for v, l in specs))
@@ -248,7 +244,7 @@ def main():
                       f"{c['anom'].min():+.3f} .. {c['anom'].max():+.3f} {units}",
                       flush=True)
                 cells[(var, s.year)] = (s, c)
-        diurnal_grid(cells, specs, years, region, area)
+        diurnal_grid(cells, specs, years, region, area, year_label)
         write_table(cells, specs, years, region)
     print(f"done -> {DIURNAL_ROOT}/diurnal_cycle/")
 
