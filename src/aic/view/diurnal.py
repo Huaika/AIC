@@ -122,27 +122,21 @@ def _hour_axis(ax, bottom=True):
 def diurnal_grid(cells, specs, years, region, area, year_label):
     """One figure, ``rows = specs`` (variable, level) x ``columns = years``.
 
-    Each cell draws the diurnal cycle of that dataset: the offset of each synoptic
-    hour from the day's own mean (left axis, zero-centred, so the oscillation is
-    readable), with a twin RIGHT axis carrying the SAME curve in absolute units --
-    the mean temperature / geopotential itself. ``cells[(var, year)]`` is the
-    composite frame (or None). Rows share their y-range so the years are directly
-    comparable; each row is annotated with its annual daily-mean value."""
+    Each cell draws the dataset's diurnal cycle as the ABSOLUTE area-mean field at each
+    UTC hour. All columns in a row SHARE one y-axis (``sharey='row'``), so the
+    geopotential / temperature values are directly comparable across the years -- both
+    the inter-year climate shift and the (smaller) daily oscillation on one common
+    absolute scale. ``cells[(var, year)]`` is the composite frame (or None)."""
     nr, nc = len(specs), len(years)
     fig, axes = plt.subplots(nr, nc, figsize=(4.3 * nc + 1.4, 3.7 * nr + 0.5),
-                             squeeze=False, sharex=True)
+                             squeeze=False, sharex=True, sharey="row")
     for r, (var, lev) in enumerate(specs):
         meta = C.VARIABLES[var]
         units, label = meta["units"], meta["label"]
-        row = [cells.get((var, y)) for y in years]
-        lim = max((float(np.nanmax(np.abs([d["anom_lo"], d["anom_hi"]])))
-                   for _, d in filter(None, row)), default=1.0) * 1.15
         for c, y in enumerate(years):
             ax = axes[r][c]
-            ax.set_ylim(-lim, lim)
-            ax.axhline(0.0, color="0.25", lw=1.2, ls=":", alpha=0.85)
             _hour_axis(ax, bottom=(r == nr - 1))
-            P.despine(ax, sides=("top",))
+            P.despine(ax, sides=("top", "right"))
             if r == 0:                                   # column title only on the top row
                 ax.set_title(year_label.get(y, str(y)))
             item = cells.get((var, y))
@@ -153,23 +147,11 @@ def diurnal_grid(cells, specs, years, region, area, year_label):
             s, d = item
             dw = _wrap(d)
             col = era_color(s.year, c)
-            ax.fill_between(dw["hour"], dw["anom_lo"], dw["anom_hi"], color=col,
+            ax.fill_between(dw["hour"], dw["value_lo"], dw["value_hi"], color=col,
                             alpha=0.18, lw=0)
-            ax.plot(dw["hour"], dw["anom"], color=col, lw=2.0, marker="o", ms=4.5)
-            # twin right axis: the SAME curve read as the absolute mean field
-            daily_mean = float(d["value"].mean())
-            ax2 = ax.twinx()
-            ax2.set_ylim(daily_mean - lim, daily_mean + lim)
-            P.despine(ax2, sides=("top",))
-            if c == nc - 1:
-                ax2.set_ylabel(f"{str(label).capitalize()} at {lev} hPa [{units}]")
-            else:
-                ax2.tick_params(labelright=False)
-            ax.annotate(f"daily mean {daily_mean:.1f} {units}", xy=(0.02, 0.03),
-                        xycoords="axes fraction", color=P.MUTED)
-            if c == 0:
-                ax.set_ylabel(f"{str(label).capitalize()} @ {lev} hPa\n"
-                              f"offset from daily mean [{units}]")
+            ax.plot(dw["hour"], dw["value"], color=col, lw=2.0, marker="o", ms=4.5)
+            if c == 0:                                   # shared y-label at the row start
+                ax.set_ylabel(f"{str(label).capitalize()} at {lev} hPa [{units}]")
     fig.supxlabel("Time of Day [UTC]")               # one shared x-label for all columns
     fig.tight_layout()
     stem = "-".join(f"{C.VARIABLES[v]['short']}L{l:04d}" for v, l in specs)
