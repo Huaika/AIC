@@ -34,6 +34,17 @@ from aic.view.spaghetti import build_ref
 OOD_ROOT = C.FIG_ROOT / "out_of_distribution"
 # output file type(s) for the OOD figures (default pdf); e.g. OOD_FMTS="pdf png"
 OOD_FMTS = config.env_list("OOD_FMTS") or None
+# figure families main() renders; OOD_FIGURES selects a subset (default: all), so a
+# re-run can re-save just one family instead of the whole (expensive) set.
+FIGURES = ("skill", "facets", "spaghetti", "error_maps")
+
+
+def selected_figures():
+    want = config.env_list("OOD_FIGURES", FIGURES)
+    bad = [f for f in want if f not in FIGURES]
+    if bad:
+        raise SystemExit(f"unknown OOD_FIGURES {bad}; choose from {list(FIGURES)}")
+    return set(want)
 
 
 def _figdir(*parts):
@@ -181,6 +192,7 @@ def error_maps(sources, var, levels, region):
 
 
 def main():
+    figures = selected_figures()
     sources = S.resolve_sources()
     if len(sources) < 2:
         raise SystemExit("OOD analysis needs several runs; set EVAL_RUNS to a list.")
@@ -192,17 +204,22 @@ def main():
         for s in sources:
             by_year.setdefault(s.year, []).append(s)
         for region in regions:
-            print(f"=== OOD skill: {var} / {region} ===")
-            aggs = {yr: _year_aggs(srcs, var, short, levels, region)
-                    for yr, srcs in by_year.items()}
-            for yr in sorted(aggs):
-                skill_year(yr, aggs[yr], var, levels, region)
-            print(f"=== OOD skill (years side by side): {var} / {region} ===")
-            skill_facets_years(aggs, var, levels, region)
-            print(f"=== OOD spaghetti: {var} / {region} ===")
-            spaghetti_multiyear(sources, var, levels, region)
-            print(f"=== OOD error maps: {var} / {region} ===")
-            error_maps(sources, var, levels, region)
+            if {"skill", "facets"} & figures:
+                print(f"=== OOD skill: {var} / {region} ===")
+                aggs = {yr: _year_aggs(srcs, var, short, levels, region)
+                        for yr, srcs in by_year.items()}
+                if "skill" in figures:
+                    for yr in sorted(aggs):
+                        skill_year(yr, aggs[yr], var, levels, region)
+                if "facets" in figures:
+                    print(f"=== OOD skill (years side by side): {var} / {region} ===")
+                    skill_facets_years(aggs, var, levels, region)
+            if "spaghetti" in figures:
+                print(f"=== OOD spaghetti: {var} / {region} ===")
+                spaghetti_multiyear(sources, var, levels, region)
+            if "error_maps" in figures:
+                print(f"=== OOD error maps: {var} / {region} ===")
+                error_maps(sources, var, levels, region)
     print(f"done -> {OOD_ROOT}/<variable>/{{drift_rmse,drift_bias,spaghetti}}/")
 
 

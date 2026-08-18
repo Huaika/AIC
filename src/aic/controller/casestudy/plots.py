@@ -45,6 +45,18 @@ BEFORE = config.env_int("CS_BEFORE", 10)    # rollout window before episode
 AFTER = config.env_int("CS_AFTER", 10)      # brief window after (valid axis)
 # variable -> level(s) to evaluate (T at 850, Z at 500 for the case study)
 CS_LEVELS = {"temperature": [850], "geopotential": [500]}
+# figure families main() renders; CS_FIGURES selects a subset (default: all), so a
+# re-run can re-save just one family. The per-episode drift is always COMPUTED (the
+# aggregates pool it) -- "episodes" only controls whether its figures are written.
+FIGURES = ("episodes", "aggregate", "by_year", "error_maps")
+
+
+def selected_figures():
+    want = config.env_list("CS_FIGURES", FIGURES)
+    bad = [f for f in want if f not in FIGURES]
+    if bad:
+        raise SystemExit(f"unknown CS_FIGURES {bad}; choose from {list(FIGURES)}")
+    return set(want)
 
 
 # --------------------------------------------------------------------------- #
@@ -136,10 +148,11 @@ def spaghetti_episode(sources, defn, year, ep, var, lev):
 # --------------------------------------------------------------------------- #
 # Lagrangian: RMSE + bias vs lead over the footprint (episode rollouts)
 # --------------------------------------------------------------------------- #
-def skill_episode(sources, defn, year, ep, var, lev):
+def skill_episode(sources, defn, year, ep, var, lev, figures=True):
     """Two SEPARATE Lagrangian figures over the footprint (kept apart for
     readability): RMSE vs lead, and mean bias vs lead. One line per model,
-    coloured by the shared model palette."""
+    coloured by the shared model palette. With ``figures=False`` the per-init drift
+    is still computed and returned (the aggregates pool it) but nothing is written."""
     meta = C.VARIABLES[var]
     label, units = meta["label"], meta["units"]
     curves = []            # list of (source, aggregated sorted dataframe)
@@ -157,7 +170,7 @@ def skill_episode(sources, defn, year, ep, var, lev):
         a = agg[(agg["region"] == gp.key) & (agg["level"] == lev)].sort_values("lead_hours")
         if not a.empty:
             curves.append((src, a))
-    if not curves:
+    if not curves or not figures:
         return raw
     lines = [(src.color, src.pretty, a) for src, a in curves]
     for metric, ylab, zero in [("rmse", f"RMSE [{units}]", False),
@@ -281,7 +294,8 @@ def year_overview(defn, year, active_da, eps, region="europe"):
 
 
 # --------------------------------------------------------------------------- #
-def run_year(sources, defn, year, pool=None, window=HM.DEFAULT_WINDOW, region="europe"):
+def run_year(sources, defn, year, pool=None, window=HM.DEFAULT_WINDOW, region="europe",
+             figures=True):
     models = "+".join(s.model for s in sources)
     print(f"=== case study {defn.name} > {D.PTAG}: {models} ({year}) ===", flush=True)
     active = HM.active_mask_da(defn, year, window, region)   # 2.8deg, grid-independent
@@ -292,7 +306,7 @@ def run_year(sources, defn, year, pool=None, window=HM.DEFAULT_WINDOW, region="e
         eps = [e for e in eps if e.idx in want]
     print(f"[{year}] {len(eps)} episode(s): "
           + ", ".join(f"{e.tag}({e.label},{e.n_cells}c)" for e in eps), flush=True)
-    if not only:
+    if not only and figures:
         year_overview(defn, year, active, eps, region)
     avail = set.intersection(*(set(s.prediction_levels()) for s in sources))
     variables = C.selected_variables()
@@ -302,12 +316,15 @@ def run_year(sources, defn, year, pool=None, window=HM.DEFAULT_WINDOW, region="e
             for lev in CS_LEVELS.get(var, [850]):
                 if lev not in avail:
                     continue
-                spaghetti_episode(sources, defn, year, ep, var, lev)
-                raw = skill_episode(sources, defn, year, ep, var, lev) or []
+                if figures:
+                    spaghetti_episode(sources, defn, year, ep, var, lev)
+                raw = skill_episode(sources, defn, year, ep, var, lev,
+                                    figures=figures) or []
                 if pool is not None:
                     for model, per in raw:
                         pool[(model, var, lev)].append(per)
-                driftmap_episode(sources, defn, year, ep, var, lev)
+                if figures:
+                    driftmap_episode(sources, defn, year, ep, var, lev)
     return len(eps)
 
 
@@ -469,6 +486,7 @@ def run_error_maps(year_runs, defn, region="europe", fmts=None):
 
 def main():
     from collections import defaultdict
+    figures = selected_figures()
     defn = D.BY_NAME[config.env_str("HW_CS_DEF", "mixture")]
     years = [int(y) for y in config.env_list("CS_YEARS", ["2023", "2026"])]
     dataset = config.env_str("EVAL_DATASET", "era5")
@@ -488,7 +506,8 @@ def main():
         if not srcs:
             continue
         ypool = defaultdict(list)         # this year's episodes only (yearly agg)
-        n_year = run_year(srcs, defn, year, pool=ypool)
+        n_year = run_year(srcs, defn, year, pool=ypool,
+                          figures="episodes" in figures)
         n_events += n_year
         for k, v in ypool.items():        # roll the year into the all-years pool
             pool[k].extend(v)
@@ -504,16 +523,18 @@ def main():
     # file type(s) for the aggregate figures (default pdf); e.g. CS_AGG_FMTS="pdf png"
     fmts = config.env_list("CS_AGG_FMTS") or None
 
-    for year, ypool, srcs, n_year in year_runs:
-        run_aggregate(ypool, defn, srcs, n_year, subdir=f"{year}/_aggregate",
-                      scope_label=f"the {n_year} {year} {defn.name} heatwaves",
-                      ylims=ylims, fmts=fmts)
-    if all_srcs:
-        run_aggregate(pool, defn, all_srcs, n_events,
-                      subdir="_aggregate", scope_label=f"all {defn.name} heatwaves",
-                      ylims=ylims, fmts=fmts)
-    if year_runs:
+    if "aggregate" in figures:
+        for year, ypool, srcs, n_year in year_runs:
+            run_aggregate(ypool, defn, srcs, n_year, subdir=f"{year}/_aggregate",
+                          scope_label=f"the {n_year} {year} {defn.name} heatwaves",
+                          ylims=ylims, fmts=fmts)
+        if all_srcs:
+            run_aggregate(pool, defn, all_srcs, n_events,
+                          subdir="_aggregate", scope_label=f"all {defn.name} heatwaves",
+                          ylims=ylims, fmts=fmts)
+    if year_runs and "by_year" in figures:
         run_aggregate_byyear(year_runs, defn, ylims=ylims, fmts=fmts)
+    if year_runs and "error_maps" in figures:
         run_error_maps(year_runs, defn, fmts=fmts)
     print(f"done -> {C.FIG_ROOT}/case_study/{defn.name}_{D.PTAG}/ ({n_events} events)")
 
