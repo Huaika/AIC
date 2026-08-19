@@ -244,7 +244,8 @@ def main():
                       f"{c['anom'].min():+.3f} .. {c['anom'].max():+.3f} {units}",
                       flush=True)
                 cells[(var, s.year)] = (s, c)
-        diurnal_grid(cells, specs, years, region, area, year_label)
+        for spec in specs:                    # one file per variable (geopotential / temperature)
+            diurnal_grid(cells, [spec], years, region, area, year_label)
         write_table(cells, specs, years, region)
     print(f"done -> {DIURNAL_ROOT}/diurnal_cycle/")
 
